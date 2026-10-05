@@ -1,5 +1,5 @@
 // Local CLI: preview what CI would run, using the same engine as the Action.
-//   npx github:OpenMind-SI/dynamic-monorepos [--base origin/main] [--json] [--verbose]
+//   npx github:OpenMind-SI/dynamic-monorepo [--base origin/main] [--json] [--verbose]
 
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -86,7 +86,7 @@ function snapshotWorkingTree(git: Git): string | undefined {
     git.run(["read-tree", "HEAD"], { env });
     git.run(["add", "-A"], { env });
     const tree = git.run(["write-tree"], { env })!.trim();
-    return git.run(["commit-tree", tree, "-p", "HEAD", "-m", "dynamic-monorepos working tree snapshot"], {
+    return git.run(["commit-tree", tree, "-p", "HEAD", "-m", "dynamic-monorepo working tree snapshot"], {
       env: { GIT_AUTHOR_NAME: "snapshot", GIT_AUTHOR_EMAIL: "snapshot@localhost", GIT_COMMITTER_NAME: "snapshot", GIT_COMMITTER_EMAIL: "snapshot@localhost" },
     })!.trim();
   } finally {

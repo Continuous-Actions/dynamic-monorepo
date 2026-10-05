@@ -3,7 +3,7 @@
 import type { Plan, Reason } from './plan.ts';
 import type { Range } from './range.ts';
 
-export const NAME = 'dynamic-monorepos';
+export const NAME = 'dynamic-monorepo';
 export const CONFIG_FILE = 'dynamic-monorepo.config.json';
 const LIST_LIMIT = 50;
 

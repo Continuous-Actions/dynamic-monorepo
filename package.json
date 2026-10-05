@@ -1,5 +1,5 @@
 {
-  "name": "dynamic-monorepos",
+  "name": "dynamic-monorepo",
   "version": "0.1.0",
   "private": true,
   "description": "Dependency-aware affected-project planning for monorepos in GitHub Actions",

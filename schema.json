@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/OpenMind-SI/dynamic-monorepos/v1/schema.json",
+  "$id": "https://raw.githubusercontent.com/OpenMind-SI/dynamic-monorepo/v1/schema.json",
   "title": "dynamic-monorepo.config.json",
-  "description": "Configuration for the dynamic-monorepos GitHub Action: projects, their dependencies, and which changes affect what.",
+  "description": "Configuration for the dynamic-monorepo GitHub Action: projects, their dependencies, and which changes affect what.",
   "type": "object",
   "additionalProperties": false,
   "properties": {

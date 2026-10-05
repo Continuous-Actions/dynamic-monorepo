@@ -1,7 +1,7 @@
-> **Final decision (2026-10-05): `dynamic-monorepos`**, chosen by the maintainer from the research shortlist below plus their own proposal.
+> **Final decision (2026-10-05): `dynamic-monorepo`**, chosen by the maintainer from the research shortlist below plus their own proposals. The working name `dynamic-monorepos` (plural) was renamed to the singular form, which matches the config file name `dynamic-monorepo.config.json`.
 > It was free on GitHub Marketplace (slug 404), on npm, and as a GitHub user/org, and a repository search for the name returned 0 results.
-> The repo and the Action share the name (`uses: OpenMind-SI/dynamic-monorepos@v1`), and the Marketplace display name is **Dynamic Monorepos**.
-> The research recommendation was `monorepo-impact` (66/80). `dynamic-monorepos` is broader: it describes the outcome (dynamic CI for monorepos) rather than the mechanism, which leaves room for future features such as inference and test impact.
+> The repo and the Action share the name (`uses: OpenMind-SI/dynamic-monorepo@v1`), and the Marketplace display name is **Dynamic Monorepo**.
+> The research recommendation was `monorepo-impact` (66/80). `dynamic-monorepo` is broader: it describes the outcome (dynamic CI for monorepos) rather than the mechanism, which leaves room for future features such as inference and test impact.
 > We also considered `monorepo-actions` and rejected it: a GitHub org called `Monorepo-Actions` already exists, and the name reads as a collection of actions.
 
 # Naming: recommendation for the OpenMind-SI affected-project planning action
