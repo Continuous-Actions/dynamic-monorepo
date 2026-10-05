@@ -5,14 +5,14 @@
 set -euo pipefail
 fixture="$1"; dest="$2"; shift 2
 src="$(cd "$(dirname "$0")/.." && pwd)/fixtures/$fixture"
-rm -rf "$dest"; mkdir -p "$dest/.github"
-cp "$src/dynamic-monorepos.yml" "$dest/.github/dynamic-monorepos.yml"
+rm -rf "$dest"; mkdir -p "$dest"
+cp "$src/dynamic-monorepo.config.json" "$dest/dynamic-monorepo.config.json"
 cd "$dest"
 git init -q -b main
 git config user.email ci@example.com
 git config user.name ci
 # One source file per project directory declared in the config.
-for dir in $(grep -E '^\s+path:' .github/dynamic-monorepos.yml | awk '{print $2}'); do
+for dir in $(node -e 'const c=require("./dynamic-monorepo.config.json");for(const p of Object.values(c.projects))console.log(p.path)'); do
   mkdir -p "$dir"; echo "export {}" > "$dir/index.ts"
 done
 echo '{}' > package-lock.json

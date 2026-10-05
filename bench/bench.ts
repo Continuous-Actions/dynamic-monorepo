@@ -21,16 +21,14 @@ function rng(seed: number) {
 /** Layered DAG: libs at the bottom, apps on top; each project depends on up to 3 lower ones. */
 export function synthConfig(n: number, seed = 1): string {
   const r = rng(seed);
-  const lines = ['projects:'];
+  const projects: Record<string, { path: string; dependsOn?: string[] }> = {};
   for (let i = 0; i < n; i++) {
     const deps = new Set<string>();
     if (i > 0) for (let k = Math.floor(r() * 4); k > 0; k--) deps.add(`p${Math.floor(r() * i)}`);
-    const kind = i < n * 0.3 ? 'libs' : i < n * 0.8 ? 'services' : 'apps';
-    lines.push(`  p${i}:`, `    path: ${kind}/p${i}`);
-    if (deps.size) lines.push(`    dependsOn: [${[...deps].join(', ')}]`);
+    const kind = i < n * 0.3 ? "libs" : i < n * 0.8 ? "services" : "apps";
+    projects[`p${i}`] = deps.size ? { path: `${kind}/p${i}`, dependsOn: [...deps] } : { path: `${kind}/p${i}` };
   }
-  lines.push('ignore:', '  - "**/*.md"');
-  return lines.join('\n') + '\n';
+  return JSON.stringify({ projects, ignore: ["**/*.md"] }, null, 2);
 }
 
 function synthChanges(n: number, files: number, seed = 2): FileChange[] {
@@ -62,11 +60,11 @@ console.log('| projects | changed files | parse+validate | graph build | plan | 
 console.log('| ---: | ---: | ---: | ---: | ---: | ---: |');
 for (const [n, files] of [[10, 10], [100, 100], [500, 1_000], [1_000, 10_000], [5_000, 100_000], [10_000, 100_000]] as const) {
   const text = synthConfig(n);
-  const parse = time(() => parseConfig(text, 'bench.yml'));
+  const parse = time(() => parseConfig(text, 'bench.json'));
   const graph = time(() => new Graph(parse.value.projects.values()));
   const changes = synthChanges(n, files);
   // Only a handful of projects touched is the common case; 100k files stresses ownership lookup.
-  const p = time(() => plan({ head: parse.value, configPath: 'bench.yml', changes, base: parse.value }));
+  const p = time(() => plan({ head: parse.value, configPath: 'bench.json', changes, base: parse.value }));
   console.log(`| ${n} | ${files} | ${fmt(parse.ms)} | ${fmt(graph.ms)} | ${fmt(p.ms)} | ${p.value.affected.length} |`);
 }
 
@@ -85,7 +83,7 @@ function e2e(n: number, changedFiles: number) {
       mkdirSync(dirname(join(dir, p)), { recursive: true });
       writeFileSync(join(dir, p), c);
     };
-    write('.github/dynamic-monorepos.yml', synthConfig(n));
+    write('dynamic-monorepo.config.json', synthConfig(n));
     for (let i = 0; i < n; i++) {
       const kind = i < n * 0.3 ? 'libs' : i < n * 0.8 ? 'services' : 'apps';
       write(`${kind}/p${i}/index.ts`, `export const x = ${i};\n`);

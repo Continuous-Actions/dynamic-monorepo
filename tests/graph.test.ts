@@ -5,7 +5,7 @@ import type { Project } from '../src/config.ts';
 
 const g = (edges: Record<string, string[]>) =>
   new Graph(Object.entries(edges).map(([name, dependsOn]): Project => ({
-    name, path: name, dependsOn, targets: ['build'], include: [], exclude: [], source: 'projects',
+    name, path: name, dependsOn, targets: ['build'], include: [], exclude: [], targetExclude: {}, source: 'projects',
   })));
 const affected = (graph: Graph, ...seeds: string[]) => graph.sort(graph.reverseClosure(seeds).parent.keys());
 
@@ -61,5 +61,19 @@ describe('glob', () => {
     const t = performance.now();
     m.test('a/'.repeat(5000) + 'y');
     expect(performance.now() - t).toBeLessThan(500);
+  });
+});
+
+describe('published config files', () => {
+  it('schema.json and every example/fixture config are valid', async () => {
+    const { readFileSync, readdirSync } = await import('node:fs');
+    const { parseConfig } = await import('../src/config.ts');
+    const schema = JSON.parse(readFileSync('schema.json', 'utf8'));
+    expect(schema.properties.projects).toBeDefined();
+    for (const dir of ['fixtures/small', 'fixtures/medium', 'docs/examples/minimal', 'docs/examples/realistic']) {
+      const text = readFileSync(`${dir}/dynamic-monorepo.config.json`, 'utf8');
+      expect(() => parseConfig(text, dir)).not.toThrow();
+      expect(readdirSync(dir)).toContain('dynamic-monorepo.config.json');
+    }
   });
 });

@@ -1,12 +1,17 @@
 // Configuration loading and validation.
 //
-// The config file is untrusted input. It is parsed with js-yaml's CORE schema
-// (no custom tags, no merge keys), size-limited, and then validated into
-// Maps/frozen objects so no user-controlled key is ever used as a property
-// lookup on a plain object (prototype pollution).
+// The config file (dynamic-monorepo.config.json) is untrusted input. It is parsed
+// by a strict JSON parser (duplicate keys rejected, prototype-less objects),
+// size-limited, and validated into Maps so no user-controlled key is ever used
+// as a property lookup on a plain object (prototype pollution).
 
-import { load, CORE_SCHEMA } from 'js-yaml';
+import { parseJsonStrict } from './json.ts';
 import { compileGlob, validatePattern, type Matcher } from './glob.ts';
+import { importNx, infer, INFER_KINDS, type Inferred, type InferKind, type RepoReader } from './infer.ts';
+import { normalizeDir } from './paths.ts';
+
+export { normalizeDir } from './paths.ts';
+export type { RepoReader } from './infer.ts';
 
 export const TARGETS = ['build', 'test', 'deploy'] as const;
 export type Target = (typeof TARGETS)[number];
@@ -27,14 +32,22 @@ export type Project = {
   targets: Target[];
   include: Matcher[];
   exclude: Matcher[];
+  /** Per-target exclusions: changes matching these don't make the project "changed" for that target. */
+  targetExclude: Partial<Record<Target, Matcher[]>>;
   /** Where the project came from, for explanations. */
-  source: 'projects' | 'discover';
+  source: Source;
 };
+
+export type Source = 'projects' | 'discover' | InferKind | 'nx';
 
 export type Config = {
   projects: Map<string, Project>;
   global: Matcher[];
   ignore: Matcher[];
+  /** Repository-wide per-target exclusions (top-level "targets"). */
+  targetExclude: Record<Target, Matcher[]>;
+  /** Fingerprint of settings whose change affects every project. */
+  globalsKey: string;
 };
 
 export class ConfigError extends Error {
@@ -46,51 +59,34 @@ export class ConfigError extends Error {
   }
 }
 
-/** Lists immediate sub-directory names of a repo-relative directory. */
-export type ListDirs = (dir: string) => string[];
-
-const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._@/-]{0,127}$/;
+const NAME_RE = /^[A-Za-z0-9@][A-Za-z0-9._@/-]{0,213}$/;
 const RESERVED = new Set(['__proto__', 'constructor', 'prototype']);
-const TOP_KEYS = new Set(['version', 'projects', 'discover', 'global', 'ignore']);
+const TOP_KEYS = new Set(['$schema', 'version', 'projects', 'discover', 'infer', 'import', 'targets', 'global', 'ignore']);
 const PROJECT_KEYS = new Set(['path', 'dependsOn', 'targets', 'include', 'exclude']);
 
 export function validateName(name: string): string | undefined {
   if (RESERVED.has(name)) return `"${name}" is a reserved name`;
   if (!NAME_RE.test(name)) {
-    return `project name "${truncate(name)}" must match ${NAME_RE} (letters, digits, ".", "_", "@", "/", "-"; max 128 chars)`;
+    return `project name "${truncate(name)}" must match ${NAME_RE} (letters, digits, ".", "_", "@", "/", "-"; max 214 chars)`;
   }
-  if (name.includes('//') || name.endsWith('/')) return `project name "${name}" must not contain "//" or end with "/"`;
+  if (name.includes('//') || name.endsWith('/') || name.includes('..')) return `project name "${name}" must not contain "//" or "..", or end with "/"`;
   return undefined;
 }
 
-/** Normalises a repo-relative directory path or returns an error string. */
-export function normalizeDir(raw: unknown): { path: string } | { error: string } {
-  if (typeof raw !== 'string') return { error: 'must be a string' };
-  if (raw.length === 0 || raw.length > 1024) return { error: 'must be 1-1024 characters' };
-  if (raw.includes('\0')) return { error: 'must not contain NUL bytes' };
-  if (raw.includes('\\')) return { error: 'must use "/" separators' };
-  if (raw.startsWith('/') || /^[A-Za-z]:/.test(raw)) return { error: 'must be relative to the repository root' };
-  if (/[*?[\]{}]/.test(raw)) return { error: 'must be a directory, not a glob (use "discover" or "include")' };
-  const parts = raw.split('/').filter((s) => s !== '' && s !== '.');
-  if (parts.includes('..')) return { error: 'must not contain ".." segments' };
-  if (parts.includes('.git')) return { error: 'must not point inside .git' };
-  return { path: parts.length === 0 ? '.' : parts.join('/') };
-}
-
-export function parseConfig(text: string, file: string, listDirs?: ListDirs): Config {
-  if (Buffer.byteLength(text, 'utf8') > LIMITS.configBytes) {
+export function parseConfig(text: string, file: string, reader?: RepoReader): Config {
+  if (Buffer.byteLength(text, "utf8") > LIMITS.configBytes) {
     throw new ConfigError(file, [`file is larger than ${LIMITS.configBytes} bytes`]);
   }
   let doc: unknown;
   try {
-    doc = load(text, { schema: CORE_SCHEMA, filename: file });
+    doc = parseJsonStrict(text);
   } catch (err) {
-    throw new ConfigError(file, [`YAML syntax error: ${(err as Error).message.split('\n')[0]}`]);
+    throw new ConfigError(file, [`JSON syntax error: ${(err as Error).message}`]);
   }
-  return validateConfig(doc, file, listDirs);
+  return validateConfig(doc, file, reader);
 }
 
-export function validateConfig(doc: unknown, file: string, listDirs?: ListDirs): Config {
+export function validateConfig(doc: unknown, file: string, reader?: RepoReader): Config {
   const problems: string[] = [];
   if (!isPlainObject(doc)) throw new ConfigError(file, ['top level must be a mapping']);
 
@@ -111,13 +107,37 @@ export function validateConfig(doc: unknown, file: string, listDirs?: ListDirs):
     }
   }
 
+  // Inferred (ecosystem manifests) and imported (Nx graph) projects come after explicit ones.
+  const kinds = stringList(doc['infer'], '"infer"', problems);
+  for (const k of kinds) {
+    if (!(INFER_KINDS as readonly string[]).includes(k)) problems.push(`"infer" has unknown kind "${truncate(k)}" (allowed: ${INFER_KINDS.join(', ')})`);
+  }
+  const rawImport = doc['import'];
+  let nxFile: string | undefined;
+  if (rawImport !== undefined && rawImport !== null) {
+    if (!isPlainObject(rawImport) || Object.keys(rawImport).some((k) => k !== 'nx') || typeof rawImport['nx'] !== 'string') {
+      problems.push('"import" must be a mapping like { nx: path/to/graph.json }');
+    } else {
+      const n = normalizeDir(rawImport['nx']);
+      if ('error' in n) problems.push(`"import.nx" ${n.error}`);
+      else nxFile = n.path;
+    }
+  }
+  if (reader) {
+    const found = [
+      ...kinds.filter((k): k is InferKind => (INFER_KINDS as readonly string[]).includes(k)).flatMap((k) => infer(k, reader, problems)),
+      ...(nxFile ? importNx(reader, nxFile, problems) : []),
+    ];
+    mergeInferred(found, projects, problems);
+  }
+
   const discover = stringList(doc['discover'], '"discover"', problems);
   for (const pattern of discover) {
-    discoverProjects(pattern, projects, problems, listDirs);
+    discoverProjects(pattern, projects, problems, reader);
   }
 
   if (projects.size === 0 && problems.length === 0) {
-    problems.push('no projects defined (add "projects" or "discover")');
+    problems.push('no projects defined (add "projects", "infer", "import" or "discover")');
   }
   if (projects.size > LIMITS.projects) problems.push(`more than ${LIMITS.projects} projects`);
 
@@ -141,9 +161,81 @@ export function validateConfig(doc: unknown, file: string, listDirs?: ListDirs):
 
   const global = globList(doc['global'], '"global"', problems);
   const ignore = globList(doc['ignore'], '"ignore"', problems);
+  const targetExclude = parseGlobalTargets(doc['targets'], problems);
 
   if (problems.length > 0) throw new ConfigError(file, problems);
-  return { projects, global, ignore };
+  const pats = (ms: Matcher[]) => ms.map((m) => m.pattern);
+  const globalsKey = JSON.stringify([pats(global), pats(ignore), TARGETS.map((t) => pats(targetExclude[t]))]);
+  return { projects, global, ignore, targetExclude, globalsKey };
+}
+
+/**
+ * Adds inferred projects. An explicit project with the same name or path wins,
+ * but inferred dependency edges are kept (unioned), so you only declare what
+ * the manifests cannot express.
+ */
+function mergeInferred(found: Inferred[], projects: Map<string, Project>, problems: string[]): void {
+  const byPath = new Map([...projects.values()].map((p) => [p.path, p.name]));
+  const alias = new Map<string, string>(); // inferred name -> final project name
+  for (const f of found) {
+    const dir = normalizeDir(f.path);
+    if ('error' in dir) {
+      problems.push(`infer ${f.via}: "${truncate(f.path)}" ${dir.error}`);
+      continue;
+    }
+    const sameName = projects.get(f.name);
+    const samePath = byPath.has(dir.path) ? projects.get(byPath.get(dir.path)!) : undefined;
+    if (sameName && sameName.path !== dir.path && sameName.source !== 'projects') {
+      problems.push(`infer ${f.via}: "${f.name}" found at both "${sameName.path}" and "${dir.path}"`);
+      continue;
+    }
+    const existing = sameName ?? samePath;
+    if (existing) {
+      alias.set(f.name, existing.name);
+      continue;
+    }
+    const nameProblem = validateName(f.name);
+    if (nameProblem) {
+      problems.push(`infer ${f.via}: ${nameProblem}`);
+      continue;
+    }
+    alias.set(f.name, f.name);
+    byPath.set(dir.path, f.name);
+    projects.set(f.name, {
+      name: f.name, path: dir.path, dependsOn: [], targets: [...DEFAULT_TARGETS], include: [], exclude: [], targetExclude: {},
+      source: f.via as Source,
+    });
+  }
+  for (const f of found) {
+    const target = projects.get(alias.get(f.name) ?? '');
+    if (!target) continue;
+    const deps = new Set(target.dependsOn);
+    for (const d of f.dependsOn) {
+      const resolved = alias.get(d);
+      if (resolved && resolved !== target.name) deps.add(resolved);
+    }
+    target.dependsOn = [...deps].sort();
+  }
+}
+
+/** Top-level `targets: { deploy: { exclude: [...] } }` applies to every project. */
+function parseGlobalTargets(raw: unknown, problems: string[]): Record<Target, Matcher[]> {
+  const out = Object.fromEntries(TARGETS.map((t) => [t, [] as Matcher[]])) as Record<Target, Matcher[]>;
+  if (raw === undefined || raw === null) return out;
+  if (!isPlainObject(raw)) {
+    problems.push('top-level "targets" must be a mapping like { deploy: { exclude: ["**/*.test.ts"] } }');
+    return out;
+  }
+  for (const [t, settings] of Object.entries(raw)) {
+    if (!(TARGETS as readonly string[]).includes(t)) {
+      problems.push(`top-level "targets" has unknown target "${truncate(t)}" (allowed: ${TARGETS.join(', ')})`);
+    } else if (!isPlainObject(settings) || Object.keys(settings).some((k) => k !== 'exclude')) {
+      problems.push(`top-level "targets.${t}" must be { exclude: [globs] }`);
+    } else {
+      out[t as Target] = globList(settings['exclude'], `"targets.${t}.exclude"`, problems);
+    }
+  }
+  return out;
 }
 
 function validateProject(name: string, raw: unknown, problems: string[]): Project | undefined {
@@ -169,7 +261,7 @@ function validateProject(name: string, raw: unknown, problems: string[]): Projec
   }
   const dependsOn = [...new Set(stringList(raw['dependsOn'], `${where} "dependsOn"`, problems))].sort();
   if (dependsOn.length > LIMITS.dependsOnPerProject) problems.push(`${where} has too many dependencies`);
-  const targets = parseTargets(raw['targets'], where, problems);
+  const { targets, targetExclude } = parseTargets(raw['targets'], where, problems);
   return {
     name,
     path: dir.path,
@@ -177,13 +269,29 @@ function validateProject(name: string, raw: unknown, problems: string[]): Projec
     targets,
     include: globList(raw['include'], `${where} "include"`, problems),
     exclude: globList(raw['exclude'], `${where} "exclude"`, problems),
+    targetExclude,
     source: 'projects',
   };
 }
 
-function parseTargets(raw: unknown, where: string, problems: string[]): Target[] {
-  if (raw === undefined) return [...DEFAULT_TARGETS];
-  const list = stringList(raw, `${where} "targets"`, problems);
+/** `targets` is a list (`[build, test]`) or a mapping (`{ build: {}, deploy: { exclude: [globs] } }`). */
+function parseTargets(raw: unknown, where: string, problems: string[]): { targets: Target[]; targetExclude: Partial<Record<Target, Matcher[]>> } {
+  const targetExclude: Partial<Record<Target, Matcher[]>> = {};
+  if (raw === undefined) return { targets: [...DEFAULT_TARGETS], targetExclude };
+  const list: string[] = [];
+  if (isPlainObject(raw)) {
+    for (const [t, settings] of Object.entries(raw)) {
+      list.push(t);
+      if (settings === null || settings === true) continue;
+      if (!isPlainObject(settings) || Object.keys(settings).some((k) => k !== 'exclude')) {
+        problems.push(`${where} target "${truncate(t)}" settings must be empty or { exclude: [globs] }`);
+      } else if ((TARGETS as readonly string[]).includes(t)) {
+        targetExclude[t as Target] = globList(settings['exclude'], `${where} target "${t}" "exclude"`, problems);
+      }
+    }
+  } else {
+    list.push(...stringList(raw, `${where} "targets"`, problems));
+  }
   const out: Target[] = [];
   for (const t of list) {
     if ((TARGETS as readonly string[]).includes(t)) {
@@ -192,7 +300,7 @@ function parseTargets(raw: unknown, where: string, problems: string[]): Target[]
       problems.push(`${where} has unknown target "${truncate(t)}" (allowed: ${TARGETS.join(', ')})`);
     }
   }
-  return TARGETS.filter((t) => out.includes(t));
+  return { targets: TARGETS.filter((t) => out.includes(t)), targetExclude };
 }
 
 /**
@@ -200,23 +308,22 @@ function parseTargets(raw: unknown, where: string, problems: string[]): Target[]
  * immediate sub-directory, named after the directory. Explicit "projects"
  * entries win over discovered ones (same name or same path).
  */
-function discoverProjects(pattern: string, projects: Map<string, Project>, problems: string[], listDirs?: ListDirs): void {
+function discoverProjects(pattern: string, projects: Map<string, Project>, problems: string[], reader?: RepoReader): void {
   const m = /^(.*?)\/?\*$/.exec(pattern);
   const base = m ? normalizeDir(m[1] === '' ? '.' : m[1]) : undefined;
   if (!m || !base || 'error' in base) {
     problems.push(`"discover" entry "${truncate(pattern)}" must look like "<dir>/*" (one level, e.g. "packages/*")`);
     return;
   }
-  if (!listDirs) return;
+  if (!reader) return;
   const explicitPaths = new Set([...projects.values()].map((p) => p.path));
-  const discovered = new Map<string, string>();
-  for (const dirName of listDirs(base.path).sort()) {
+  for (const dirName of reader.listDirs(base.path).sort()) {
     if (dirName.startsWith('.')) continue;
     const path = base.path === '.' ? dirName : `${base.path}/${dirName}`;
     if (explicitPaths.has(path)) continue;
     const existing = projects.get(dirName);
     if (existing) {
-      if (existing.source === 'projects') continue; // explicit entry overrides
+      if (existing.source !== 'discover') continue; // explicit or inferred entry overrides
       problems.push(`discovered projects "${existing.path}" and "${path}" share the name "${dirName}"; declare one explicitly under "projects"`);
       continue;
     }
@@ -225,9 +332,8 @@ function discoverProjects(pattern: string, projects: Map<string, Project>, probl
       problems.push(`discovered directory "${truncate(path)}": ${nameProblem}`);
       continue;
     }
-    discovered.set(dirName, path);
     projects.set(dirName, {
-      name: dirName, path, dependsOn: [], targets: [...DEFAULT_TARGETS], include: [], exclude: [], source: 'discover',
+      name: dirName, path, dependsOn: [], targets: [...DEFAULT_TARGETS], include: [], exclude: [], targetExclude: {}, source: 'discover',
     });
   }
 }
@@ -291,5 +397,6 @@ function editDistance(a: string, b: string, cap: number): number {
 
 /** Stable fingerprint of everything about a project that affects planning. */
 export function projectFingerprint(p: Project): string {
-  return JSON.stringify([p.path, p.dependsOn, p.targets, p.include.map((m) => m.pattern), p.exclude.map((m) => m.pattern)]);
+  return JSON.stringify([p.path, p.dependsOn, p.targets, p.include.map((m) => m.pattern), p.exclude.map((m) => m.pattern),
+    TARGETS.map((t) => p.targetExclude[t]?.map((m) => m.pattern) ?? null)]);
 }

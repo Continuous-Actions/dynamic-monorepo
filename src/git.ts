@@ -25,14 +25,14 @@ export class Git {
     this.log = log;
   }
 
-  run(args: string[], opts: { allowFail?: boolean } = {}): string | undefined {
+  run(args: string[], opts: { allowFail?: boolean; env?: Record<string, string> } = {}): string | undefined {
     try {
       return execFileSync('git', ['-c', 'core.quotepath=off', ...args], {
         cwd: this.cwd,
         encoding: 'utf8',
         maxBuffer: 1024 * 1024 * 512,
         stdio: ['ignore', 'pipe', 'pipe'],
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' },
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', ...opts.env },
         windowsHide: true,
       });
     } catch (err) {

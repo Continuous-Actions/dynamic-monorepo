@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { cleanup, prPayload, pushPayload, Repo, runAction, smallRepo, SMALL_CONFIG, tmp } from './helpers.ts';
+import { CFG, CONFIG, cleanup, prPayload, pushPayload, Repo, runAction, smallRepo, SMALL_CONFIG, tmp } from './helpers.ts';
 import { execFileSync } from 'node:child_process';
 
 afterAll(cleanup);
@@ -245,7 +245,7 @@ describe('configuration changes', () => {
   it('detects added, deleted, renamed and redefined projects', () => {
     const repo = new Repo();
     repo.commit('init', {
-      '.github/dynamic-monorepos.yml': `projects:
+      [CFG]: `projects:
   a: { path: pkgs/a }
   b: { path: pkgs/b, dependsOn: [a] }
   old: { path: pkgs/old }
@@ -257,7 +257,7 @@ describe('configuration changes', () => {
     });
     const before = repo.head();
     const after = repo.commit('reshape', {
-      '.github/dynamic-monorepos.yml': `projects:
+      [CFG]: `projects:
   a: { path: pkgs/a }
   b: { path: pkgs/b, dependsOn: [a] }
   renamed: { path: pkgs/old }
@@ -266,7 +266,7 @@ describe('configuration changes', () => {
   d: { path: pkgs/d, dependsOn: [c] }
 `,
       'pkgs/legacy': null,
-      'pkgs/fresh/x': '1',
+      'pkgs/fresh/x': 'brand new project',
     });
     const r = push(repo, before, after);
     expect(r.code).toBe(0);
@@ -282,12 +282,12 @@ describe('configuration changes', () => {
   it('changing global/ignore selects all; adding the config file selects all', () => {
     const repo = smallRepo();
     const before = repo.head();
-    const after = repo.commit('cfg', { '.github/dynamic-monorepos.yml': SMALL_CONFIG.replace('package-lock.json', 'yarn.lock') });
+    const after = repo.commit('cfg', { [CFG]: SMALL_CONFIG.replace('package-lock.json', 'yarn.lock') });
     expect(push(repo, before, after).outputs['all']).toBe('true');
 
     const fresh = new Repo();
     const b2 = fresh.commit('init', { 'apps/web/x': '1' });
-    const a2 = fresh.commit('add cfg', { '.github/dynamic-monorepos.yml': 'projects:\n  web: { path: apps/web }\n' });
+    const a2 = fresh.commit('add cfg', { [CFG]: 'projects:\n  web: { path: apps/web }\n' });
     const r2 = push(fresh, b2, a2);
     expect(r2.outputs['all']).toBe('true');
     expect(r2.outputs['reason']).toContain('was added');
@@ -296,7 +296,7 @@ describe('configuration changes', () => {
   it('discovers projects and reports newly discovered directories as added', () => {
     const repo = new Repo();
     const cfg = 'discover: ["packages/*"]\nprojects:\n  app: { path: apps/app, dependsOn: [core] }\n';
-    const before = repo.commit('init', { '.github/dynamic-monorepos.yml': cfg, 'packages/core/x': '1', 'packages/util/x': '1', 'apps/app/x': '1' });
+    const before = repo.commit('init', { [CFG]: cfg, 'packages/core/x': '1', 'packages/util/x': '1', 'apps/app/x': '1' });
     const after = repo.commit('new pkg', { 'packages/newpkg/x': '1', 'packages/core/y': '2' });
     const r = push(repo, before, after);
     expect(r.json('added')).toEqual(['newpkg']);
@@ -309,7 +309,7 @@ describe('project ownership', () => {
   it('nested projects: deepest path wins; include/exclude refine ownership', () => {
     const repo = new Repo();
     const before = repo.commit('init', {
-      '.github/dynamic-monorepos.yml': `projects:
+      [CFG]: `projects:
   web: { path: apps/web, exclude: ["apps/web/docs/**"] }
   plugin: { path: apps/web/plugin }
   tooling: { path: tools, include: ["tsconfig.base.json"] }
@@ -328,7 +328,7 @@ describe('project ownership', () => {
   it('a root project (path ".") owns otherwise-unowned files', () => {
     const repo = new Repo();
     const before = repo.commit('init', {
-      '.github/dynamic-monorepos.yml': 'projects:\n  root: { path: . }\n  lib: { path: lib }\n',
+      [CFG]: 'projects:\n  root: { path: . }\n  lib: { path: lib }\n',
       'lib/x': '1', 'main.go': 'package main',
     });
     const after = repo.commit('root', { 'main.go': 'package main // edit' });
@@ -339,7 +339,7 @@ describe('project ownership', () => {
 describe('failures are loud and clear', () => {
   const fail = (config: string) => {
     const repo = new Repo();
-    repo.commit('init', { '.github/dynamic-monorepos.yml': config, 'a/x': '1' });
+    repo.commit('init', { [CFG]: config, 'a/x': '1' });
     const r = runAction(repo, { event: 'workflow_dispatch' });
     expect(r.code).toBe(1);
     expect(r.outputs).toEqual({});
@@ -353,8 +353,14 @@ describe('failures are loud and clear', () => {
     expect(r.code).toBe(1);
     expect(r.stdout).toMatch(/::error.*file not found/);
   });
-  it('malformed YAML', () => expect(fail('projects:\n  a: [unclosed')).toMatch(/::error.*YAML syntax error/));
-  it('duplicate project keys', () => expect(fail('projects:\n  a: { path: a }\n  a: { path: b }\n')).toMatch(/duplicated mapping key/));
+  it('malformed YAML', () => expect(fail('projects:\n  a: [unclosed')).toMatch(/::error.*JSON syntax error: unexpected character "p" at line 1, column 1/));
+  it('duplicate project keys', () => {
+    const repo = new Repo();
+    repo.commit('init', { [CONFIG]: '{ "projects": { "a": { "path": "a" }, "a": { "path": "b" } } }', 'a/x': '1' });
+    const r = runAction(repo);
+    expect(r.code).toBe(1);
+    expect(r.stdout).toMatch(/duplicate key "a" at line 1/);
+  });
   it('unknown dependency with suggestion', () => expect(fail('projects:\n  shared: { path: a }\n  api: { path: b, dependsOn: [sharred] }\n')).toMatch(/unknown project "sharred".*did you mean "shared"/));
   it('cycles name the full cycle', () => {
     const out = fail('projects:\n  a: { path: a, dependsOn: [c] }\n  b: { path: b, dependsOn: [a] }\n  c: { path: c, dependsOn: [b] }\n  d: { path: d }\n');
@@ -368,7 +374,7 @@ describe('failures are loud and clear', () => {
   it('unknown keys (typos)', () => expect(fail('projects:\n  a: { path: a, dependOn: [b] }\n')).toMatch(/unknown key "dependOn"/));
   it('two projects on one path', () => expect(fail('projects:\n  a: { path: a }\n  b: { path: a/ }\n')).toMatch(/both use path "a"/));
   it('unsupported glob syntax', () => expect(fail('projects:\n  a: { path: a }\nglobal: ["{a,b}/**"]\n')).toMatch(/only "\*", "\*\*" and "\?"/));
-  it('YAML merge keys and custom tags are not interpreted', () => expect(fail('projects:\n  a: !!js/function "x"\n')).toMatch(/::error/));
+  it('non-JSON input is rejected', () => expect(fail('projects:\n  a: !!js/function "x"\n')).toMatch(/::error/));
   it('suspicious base input is rejected', () => {
     const repo = smallRepo();
     const r = runAction(repo, { inputs: { base: '--output=/tmp/pwned' } });
@@ -380,7 +386,7 @@ describe('failures are loud and clear', () => {
 describe('log safety', () => {
   it.skipIf(process.platform === 'win32')('file names cannot inject workflow commands', () => {
     const repo = new Repo();
-    const before = repo.commit('init', { '.github/dynamic-monorepos.yml': 'projects:\n  a: { path: a }\n', 'a/x': '1' });
+    const before = repo.commit('init', { [CFG]: 'projects:\n  a: { path: a }\n', 'a/x': '1' });
     const after = repo.commit('evil', { '::warning::pwned': '1' });
     const r = runAction(repo, { event: 'push', payload: pushPayload(before, after), inputs: { verbose: 'true' } });
     expect(r.code).toBe(0);

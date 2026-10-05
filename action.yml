@@ -8,7 +8,7 @@ branding:
 inputs:
   config:
     description: Path to the configuration file, relative to the working directory.
-    default: .github/dynamic-monorepos.yml
+    default: dynamic-monorepo.config.json
   base:
     description: >-
       Optional ref or SHA to compare against (uses the merge-base with HEAD).
@@ -26,6 +26,9 @@ inputs:
   verbose:
     description: Log every skipped project, files outside any project, git commands and the full plan JSON.
     default: 'false'
+  max-jobs:
+    description: Maximum entries in each *_batches output (GitHub allows 256 jobs per matrix).
+    default: '256'
   working-directory:
     description: Directory inside the repository to run in.
     default: '.'
@@ -41,12 +44,18 @@ outputs:
     description: JSON array of affected projects with the "test" target.
   deploy:
     description: JSON array of affected projects with the "deploy" target.
+  build_batches:
+    description: 'JSON array of at most max-jobs arrays that together contain every project in build, for very large monorepos: matrix.batch is a list of projects.'
+  test_batches:
+    description: Like build_batches, for test.
+  deploy_batches:
+    description: Like build_batches, for deploy.
   added:
     description: JSON array of projects that exist in the config at head but not at base.
   deleted:
     description: JSON array of projects that existed at base but no longer exist.
   renamed:
-    description: 'JSON array of {"from","to"} objects for projects renamed at the same path.'
+    description: 'JSON array of {"from","to"} objects for renamed projects (same path, or files moved by git rename).'
   skipped:
     description: JSON array of projects that are not affected.
   paths:

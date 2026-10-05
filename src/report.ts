@@ -4,6 +4,7 @@ import type { Plan, Reason } from './plan.ts';
 import type { Range } from './range.ts';
 
 export const NAME = 'dynamic-monorepos';
+export const CONFIG_FILE = 'dynamic-monorepo.config.json';
 const LIST_LIMIT = 50;
 
 export function explain(r: Reason | undefined): string {
@@ -78,7 +79,7 @@ export function markdownReport(plan: Plan, range: Range): string {
     out.push('| Project | Targets | Why |', '| --- | --- | --- |');
     for (const n of cap(plan.affected, 200)) {
       const targets = (['build', 'test', 'deploy'] as const).filter((t) => plan.targets[t].includes(n)).join(', ');
-      out.push(`| \`${esc(n)}\` | ${targets || '—'} | ${esc(explain(plan.reasons.get(n)))} |`);
+      out.push(`| \`${n}\` | ${targets || '—'} | ${esc(explain(plan.reasons.get(n)))} |`);
     }
     out.push('');
   }
@@ -87,14 +88,41 @@ export function markdownReport(plan: Plan, range: Range): string {
     ['Deleted', plan.deleted],
     ['Renamed', plan.renamed.map((r) => `${r.from} → ${r.to}`)],
   ];
-  for (const [title, items] of extra) if (items.length) out.push(`**${title}:** ${cap(items).map((i) => `\`${esc(i)}\``).join(', ')}`, '');
+  for (const [title, items] of extra) if (items.length) out.push(`**${title}:** ${cap(items).map((i) => `\`${i}\``).join(', ')}`, '');
   if (plan.skipped.length) {
     out.push(`<details><summary>Skipped (${plan.skipped.length}) — no changed files and no dependency on a changed project</summary>`, '',
-      cap(plan.skipped, 500).map((n) => `\`${esc(n)}\``).join(', '), '', '</details>', '');
+      cap(plan.skipped, 500).map((n) => `\`${n}\``).join(', '), '', '</details>', '');
   }
   if (plan.files.unowned.length) {
     out.push(`<details><summary>Changed files outside any project (${plan.files.unowned.length})</summary>`, '',
-      cap(plan.files.unowned, 200).map((f) => `- \`${esc(f)}\``).join('\n'), '', '</details>', '');
+      cap(plan.files.unowned, 200).map((f) => `- ${esc(f)}`).join('\n'), '', '</details>', '');
   }
   return out.join('\n') + '\n';
+}
+
+/** Splits a list into at most `max` balanced batches, keeping dependency order inside each batch. */
+export function batches(list: string[], max: number): string[][] {
+  const n = Math.min(max, list.length);
+  const out: string[][] = Array.from({ length: n }, () => []);
+  list.forEach((name, i) => out[Math.floor((i * n) / list.length)]!.push(name));
+  return out;
+}
+
+export function serialize(p: Plan) {
+  return {
+    all: p.all,
+    allReason: p.allReason ?? null,
+    changed: p.changed,
+    affected: p.affected,
+    build: p.targets.build,
+    test: p.targets.test,
+    deploy: p.targets.deploy,
+    added: p.added,
+    deleted: p.deleted,
+    renamed: p.renamed,
+    skipped: p.skipped,
+    paths: p.paths,
+    reasons: Object.fromEntries([...p.reasons].sort(([a], [b]) => (a < b ? -1 : 1))),
+    files: p.files,
+  };
 }

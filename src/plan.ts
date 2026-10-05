@@ -80,6 +80,8 @@ export function plan(input: PlanInput): Plan {
   const reasons = new Map<string, Reason>();
   const fileHits = new Map<string, string[]>();
   const fileCounts = new Map<string, number>();
+  // Per target: projects with at least one change that is not excluded for that target.
+  const targetSeeds = Object.fromEntries(TARGETS.map((t) => [t, new Set<string>()])) as Record<Target, Set<string>>;
   const unowned: string[] = [];
   const globalHits: string[] = [];
   let ignored = 0;
@@ -112,13 +114,16 @@ export function plan(input: PlanInput): Plan {
           list.push(file);
           fileHits.set(p.name, list);
         }
+        for (const t of TARGETS) {
+          if (!anyMatch(head.targetExclude[t], file) && !anyMatch(p.targetExclude[t] ?? [], file)) targetSeeds[t].add(p.name);
+        }
       }
     }
   }
 
   // Project-level config diff: added / deleted / renamed / redefined.
-  const added: string[] = [];
-  const deleted: string[] = [];
+  let added: string[] = [];
+  let deleted: string[] = [];
   const renamed: { from: string; to: string }[] = [];
   const redefined: string[] = [];
   let allReason = input.forceAll;
@@ -140,8 +145,14 @@ export function plan(input: PlanInput): Plan {
     for (const p of base.projects.values()) {
       if (!head.projects.has(p.name) && headByPath.get(p.path) === undefined) deleted.push(p.name);
     }
-    if (configChanged && (patterns(base.global) !== patterns(head.global) || patterns(base.ignore) !== patterns(head.ignore))) {
-      allReason ??= `"global" or "ignore" changed in ${configPath}`;
+    // Renamed AND moved: most of a deleted project's files were git-renamed into one added project.
+    for (const pair of movedProjects(changes, new Owners(base), owners, new Set(deleted), new Set(added))) {
+      renamed.push(pair);
+      deleted = deleted.filter((n) => n !== pair.from);
+      added = added.filter((n) => n !== pair.to);
+    }
+    if (configChanged && base.globalsKey !== head.globalsKey) {
+      allReason ??= `"global", "ignore" or "targets" changed in ${configPath}`;
     }
   } else if (configChanged) {
     allReason ??= base === null
@@ -159,6 +170,7 @@ export function plan(input: PlanInput): Plan {
     reasons.set(name, { kind: 'files', files: fileHits.get(name)!, count: fileCounts.get(name)! });
   }
   for (const name of [...redefined, ...added, ...renamed.map((r) => r.to)]) {
+    for (const t of TARGETS) targetSeeds[t].add(name);
     if (!seeds.has(name)) {
       seeds.add(name);
       reasons.set(name, { kind: 'definition' });
@@ -166,25 +178,28 @@ export function plan(input: PlanInput): Plan {
   }
 
   let affectedSet: Set<string>;
+  const targets = Object.fromEntries(TARGETS.map((t) => [t, [] as string[]])) as Record<Target, string[]>;
+  const has = (name: string, t: Target) => head.projects.get(name)!.targets.includes(t);
   if (allReason) {
     affectedSet = new Set(head.projects.keys());
     for (const name of affectedSet) if (!reasons.has(name)) reasons.set(name, { kind: 'all', why: allReason });
+    for (const t of TARGETS) targets[t] = graph.sort([...affectedSet].filter((n) => has(n, t)));
   } else {
     const reach = graph.reverseClosure(seeds);
     affectedSet = new Set(reach.parent.keys());
     for (const name of affectedSet) {
       if (!seeds.has(name)) reasons.set(name, { kind: 'dependency', chain: Graph.chain(reach, name) });
     }
+    // Each target propagates only from changes that are relevant to it (e.g. test-only edits don't redeploy).
+    for (const t of TARGETS) {
+      const r = targetSeeds[t].size === seeds.size ? reach : graph.reverseClosure(targetSeeds[t]);
+      targets[t] = graph.sort([...r.parent.keys()].filter((n) => has(n, t)));
+    }
   }
 
   const affected = graph.sort(affectedSet);
-  const targets = Object.fromEntries(TARGETS.map((t) => [t, [] as string[]])) as Record<Target, string[]>;
   const paths: Record<string, string> = Object.create(null);
-  for (const name of affected) {
-    const p = head.projects.get(name)!;
-    paths[name] = p.path;
-    for (const t of p.targets) targets[t].push(name);
-  }
+  for (const name of affected) paths[name] = head.projects.get(name)!.path;
 
   return {
     all: allReason !== undefined,
@@ -202,6 +217,36 @@ export function plan(input: PlanInput): Plan {
   };
 }
 
-function patterns(ms: { pattern: string }[]): string {
-  return JSON.stringify(ms.map((m) => m.pattern));
+/**
+ * Pairs a deleted project with an added one when more than half of the deleted
+ * project's removed/renamed files were renamed into the added project.
+ */
+function movedProjects(changes: FileChange[], baseOwners: Owners, headOwners: Owners, deleted: Set<string>, added: Set<string>): { from: string; to: string }[] {
+  if (deleted.size === 0 || added.size === 0) return [];
+  const outgoing = new Map<string, number>();
+  const pairs = new Map<string, number>();
+  for (const c of changes) {
+    const oldPath = c.status === 'renamed' ? c.oldPath : c.status === 'deleted' ? c.path : undefined;
+    if (!oldPath) continue;
+    for (const from of baseOwners.of(oldPath)) {
+      if (!deleted.has(from.name)) continue;
+      outgoing.set(from.name, (outgoing.get(from.name) ?? 0) + 1);
+      if (c.status !== 'renamed') continue;
+      for (const to of headOwners.of(c.path)) {
+        if (added.has(to.name)) pairs.set(`${from.name}\0${to.name}`, (pairs.get(`${from.name}\0${to.name}`) ?? 0) + 1);
+      }
+    }
+  }
+  const ranked = [...pairs].map(([k, n]) => {
+    const [from, to] = k.split('\0') as [string, string];
+    return { from, to, n };
+  }).sort((a, b) => b.n - a.n || compare(a.from, b.from) || compare(a.to, b.to));
+  const used = new Set<string>();
+  const out: { from: string; to: string }[] = [];
+  for (const { from, to, n } of ranked) {
+    if (used.has(`f:${from}`) || used.has(`t:${to}`) || n * 2 <= (outgoing.get(from) ?? 0)) continue;
+    used.add(`f:${from}`).add(`t:${to}`);
+    out.push({ from, to });
+  }
+  return out;
 }

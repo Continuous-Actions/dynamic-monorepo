@@ -12,3 +12,10 @@ All notable changes to this project are documented here. The format follows
 - Config diffing between base and head (added, deleted, renamed and redefined projects).
 - `discover` for one project per sub-directory.
 - Job summary and log explaining why each project was selected.
+- JSON config `dynamic-monorepo.config.json`, with a published JSON Schema and duplicate-key detection.
+- `infer`: projects and dependencies from npm/Yarn/pnpm/Bun workspaces, go.work and Cargo workspaces.
+- `import.nx`: read an Nx project graph (`nx graph --file`).
+- Per-target `exclude` (top-level and per project) for test-impact and deploy-impact planning.
+- Detection of projects that are renamed and moved at the same time, using git renames.
+- `*_batches` outputs and a `max-jobs` input for monorepos with more than 256 projects in one list.
+- CLI (`dist/cli.js`, `npx github:OpenMind-SI/dynamic-monorepos`) to preview the plan locally, including uncommitted changes.
