@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/OpenMind-SI/dynamic-monorepo/v1/schema.json",
+  "$schema": "https://raw.githubusercontent.com/Continuous-Actions/dynamic-monorepo/v1/schema.json",
   "projects": {
     "shared": {
       "path": "libs/shared"

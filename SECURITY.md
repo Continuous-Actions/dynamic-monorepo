@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Please **do not** open a public issue. Report vulnerabilities through
-[GitHub private vulnerability reporting](https://github.com/OpenMind-SI/dynamic-monorepo/security/advisories/new).
+[GitHub private vulnerability reporting](https://github.com/Continuous-Actions/dynamic-monorepo/security/advisories/new).
 We aim to acknowledge reports within 3 working days.
 
 ## Supported versions
@@ -14,7 +14,7 @@ We aim to acknowledge reports within 3 working days.
 
 ## Recommendations for users
 
-- Pin the action by full commit SHA (`uses: OpenMind-SI/dynamic-monorepo@<sha> # v1.x.y`), or at least to the `v1` tag.
+- Pin the action by full commit SHA (`uses: Continuous-Actions/dynamic-monorepo@<sha> # v1.x.y`), or at least to the `v1` tag.
 - Grant only `contents: read`. The action needs no other permission and uses no token.
 - Pass matrix values to scripts through `env:` instead of `${{ }}` interpolation inside `run:`.
 

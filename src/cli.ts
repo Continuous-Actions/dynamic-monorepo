@@ -1,6 +1,6 @@
 // Local CLI: preview what CI would run, using the same engine as the Action,
 // and `projects` to list what the configuration (or auto-detection) finds.
-//   npx github:OpenMind-SI/dynamic-monorepo [projects] [--base origin/main] [--json] [--verbose]
+//   npx github:Continuous-Actions/dynamic-monorepo [projects] [--base origin/main] [--json] [--verbose]
 
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';

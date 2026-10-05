@@ -30,7 +30,7 @@ jobs:
       has_docker: ${{ steps.plan.outputs.has_docker }}
     steps:
       - uses: actions/checkout@v7
-      - uses: OpenMind-SI/dynamic-monorepo@v1
+      - uses: Continuous-Actions/dynamic-monorepo@v1
         id: plan
 
   build:
@@ -71,8 +71,8 @@ jobs:
 To see what it finds before you push, run this in your repository:
 
 ```bash
-npx github:OpenMind-SI/dynamic-monorepo projects            # every project, its folder, targets and dependencies
-npx github:OpenMind-SI/dynamic-monorepo --base origin/main  # what CI would run for your branch
+npx github:Continuous-Actions/dynamic-monorepo projects            # every project, its folder, targets and dependencies
+npx github:Continuous-Actions/dynamic-monorepo --base origin/main  # what CI would run for your branch
 ```
 
 ## What it detects
@@ -131,7 +131,7 @@ You only need a config file to change what was detected. Create `dynamic-monorep
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/OpenMind-SI/dynamic-monorepo/v1/schema.json",
+  "$schema": "https://raw.githubusercontent.com/Continuous-Actions/dynamic-monorepo/v1/schema.json",
   "detect": true,
   "projects": {
     "web": { "path": "apps/web", "dependsOn": ["proto"], "targets": ["build", "test", "deploy"] },
@@ -153,7 +153,7 @@ The full reference, including per-target exclusions such as "test-only changes d
 
 **The build job was skipped, or failed with "Matrix vector 'project' does not contain any values".** Nothing that job builds was affected. Keep the `if: needs.plan.outputs.has_build == 'true'` line, and read the plan job's summary to see what was compared.
 
-**A project is missing, or has an odd name.** Run `npx github:OpenMind-SI/dynamic-monorepo projects`. Check that its marker file is committed and not inside a skipped folder (see [What it detects](#what-it-detects)). To add or rename a project, use a config file with `"detect": true` and an entry under `projects`.
+**A project is missing, or has an odd name.** Run `npx github:Continuous-Actions/dynamic-monorepo projects`. Check that its marker file is committed and not inside a skipped folder (see [What it detects](#what-it-detects)). To add or rename a project, use a config file with `"detect": true` and an entry under `projects`.
 
 **A change didn't select the project I expected.** The file is probably outside every project folder. Run with `verbose: true` to list such files. Add the file to that project's `include`, or to `global`.
 
@@ -166,7 +166,7 @@ The full reference, including per-target exclusions such as "test-only changes d
 
 **Why was this project picked?** The job summary has a reason for each project. For the full detail, read the `plan_file` output, or run the CLI with `--json`.
 
-**"Unable to resolve action" or "repository not found" for `OpenMind-SI/dynamic-monorepo`.** The action's repository is private. An organization admin has to allow access from your repository: in the action repository, **Settings → Actions → General → Access**.
+**"Unable to resolve action" or "repository not found" for `Continuous-Actions/dynamic-monorepo`.** The action's repository is private. An organization admin has to allow access from your repository: in the action repository, **Settings → Actions → General → Access**.
 
 **Making it a required check.** Skipped matrix jobs count as passed, but a workflow that never runs leaves a required check pending forever. Run the workflow on every pull request and require one gate job: see [docs/outputs.md](docs/outputs.md#patterns) and the [realistic example](docs/examples/realistic/workflow.yml).
 
@@ -220,4 +220,4 @@ A single bundled JavaScript file with nothing to install. Planning 1,000 project
 
 ## License
 
-[MIT](LICENSE) © OpenMind-SI
+[MIT](LICENSE) © Continuous-Actions
