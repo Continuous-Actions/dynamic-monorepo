@@ -358,7 +358,10 @@ function splitGoModules(
       const pkg = pkgs.get(dir) ?? { main: false, imports: new Set<string>() };
       const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
       if (!file.endsWith('_test.go') && /^\s*package\s+main\b/m.test(code)) pkg.main = true;
-      for (const spec of goImports(code)) {
+      // External test packages (`package foo_test`) may import their own package; that is
+      // not a dependency of the package and would otherwise create a cycle.
+      const externalTest = file.endsWith('_test.go') && /^\s*package\s+\w+_test\b/m.test(code);
+      for (const spec of externalTest ? [] : goImports(code)) {
         if (spec !== modPath && !spec.startsWith(`${modPath}/`)) continue;
         const rel = spec === modPath ? '' : spec.slice(modPath.length + 1);
         pkg.imports.add(rel === '' ? moduleDir : moduleDir === '.' ? rel : `${moduleDir}/${rel}`);

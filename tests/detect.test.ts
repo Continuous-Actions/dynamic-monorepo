@@ -254,6 +254,21 @@ describe('Go modules with several binaries', () => {
     expect(r3.json('build')).toEqual(['cmd/chat', 'cmd/admin']);
   });
 
+  it('ignores external test packages that import their own package (no false cycle)', () => {
+    const repo = new Repo();
+    repo.commit('init', {
+      'go.mod': 'module example.com/app\n',
+      'cmd/a/main.go': 'package main\n\nimport "example.com/app/lib"\n\nfunc main() { lib.F() }\n',
+      'cmd/b/main.go': 'package main\n\nfunc main() {}\n',
+      'lib/lib.go': 'package lib\n\nfunc F() {}\n',
+      'lib/lib_ext_test.go': 'package lib_test\n\nimport (\n\t"testing"\n\t"example.com/app/lib"\n\t"example.com/app/cmd/a"\n)\n\nfunc TestF(t *testing.T) { lib.F(); _ = a.X }\n',
+    });
+    const r = runAction(repo);
+    expect(r.code).toBe(0);
+    expect(r.stdout).not.toMatch(/cycle/i);
+    expect(r.json('build').sort()).toEqual(['cmd/a', 'cmd/b']);
+  });
+
   it('keeps a single-binary module as one project', () => {
     const repo = new Repo();
     repo.commit('init', { 'svc/go.mod': 'module example.com/svc\n', 'svc/main.go': 'package main\nfunc main(){}\n', 'svc/lib/lib.go': 'package lib\n' });
