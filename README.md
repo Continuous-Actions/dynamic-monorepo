@@ -1,10 +1,22 @@
 # dynamic-monorepo
 
+[![CI](https://github.com/Continuous-Actions/dynamic-monorepo/actions/workflows/ci.yml/badge.svg)](https://github.com/Continuous-Actions/dynamic-monorepo/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Continuous-Actions/dynamic-monorepo?sort=semver)](https://github.com/Continuous-Actions/dynamic-monorepo/releases)
+[![Marketplace](https://img.shields.io/badge/marketplace-dynamic--monorepo-blue?logo=github)](https://github.com/marketplace/actions/dynamic-monorepo)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Continuous-Actions/dynamic-monorepo/badge)](https://scorecard.dev/viewer/?uri=github.com/Continuous-Actions/dynamic-monorepo)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 **Build, test and deploy only the projects a change affects. No config file needed.**
+
+![A pull request changes libs/shared; dynamic-monorepo detects five projects, selects shared plus the two projects that depend on it, and skips the rest](docs/assets/hero.png)
 
 `dynamic-monorepo` reads the git diff, finds the projects in your repository on its own (from `package.json`, `go.mod`, `Dockerfile` and similar files), follows the dependencies between them, and gives you JSON lists for a GitHub Actions matrix. Change a shared library and everything that uses it is rebuilt. Change a Dockerfile and that image is rebuilt. The job summary says why each project was picked.
 
+**See it live:** the [demo monorepo](https://github.com/Continuous-Actions/dynamic-monorepo-demo) (Node, Go and Docker, no config) has pull requests showing what runs for a shared-library change, a Dockerfile change and a docs-only change.
+
 ## Quick start
+
+> **Status:** v1 is stable. Inputs and outputs won't change incompatibly within `v1`.
 
 Add this file as `.github/workflows/ci.yml` and open a pull request. That's the whole setup.
 
@@ -65,7 +77,7 @@ jobs:
 ```
 
 - The default `actions/checkout` (shallow, `fetch-depth: 1`) is enough. The action fetches only the commits it needs.
-- It needs only `contents: read`, never runs code from your repository, and doesn't call the GitHub API.
+- It needs only `contents: read`, never runs code from your repository, and doesn't call the GitHub API. See [Security](#security).
 - Add a `test` or `deploy` job the same way, using the `test`/`has_test` or `deploy`/`has_deploy` outputs.
 
 To see what it finds before you push, run this in your repository:
@@ -166,8 +178,6 @@ The full reference, including per-target exclusions such as "test-only changes d
 
 **Why was this project picked?** The job summary has a reason for each project. For the full detail, read the `plan_file` output, or run the CLI with `--json`.
 
-**"Unable to resolve action" or "repository not found" for `Continuous-Actions/dynamic-monorepo`.** The action's repository is private. An organization admin has to allow access from your repository: in the action repository, **Settings → Actions → General → Access**.
-
 **Making it a required check.** Skipped matrix jobs count as passed, but a workflow that never runs leaves a required check pending forever. Run the workflow on every pull request and require one gate job: see [docs/outputs.md](docs/outputs.md#patterns) and the [realistic example](docs/examples/realistic/workflow.yml).
 
 **More than 256 projects in one list.** GitHub allows 256 jobs per matrix. Use `build_batches` (and `test_batches`, `deploy_batches`, `docker_batches`): each entry is a list of projects.
@@ -181,6 +191,31 @@ steps:
     env:
       BATCH: ${{ join(matrix.batch, ' ') }}
 ```
+
+## FAQ
+
+**Does it need a token or secrets?** No. It reads the checked-out repository and runs `git`; the default `contents: read` permission is enough.
+
+**Does it work with a shallow checkout?** Yes. The default `actions/checkout` (depth 1) is enough: missing commits are fetched by SHA. See [docs/git.md](docs/git.md).
+
+**Pull requests, pushes, merge queues?** All of them. A pull request is compared with its base, a push with the previous commit, and a merge queue entry with its base. Manual and scheduled runs select every project unless you set `base`.
+
+**Can I use it with Nx, Turborepo, pnpm, Go workspaces or Cargo workspaces?** Yes. Detection works on any of them as-is; a config file can also read an Nx graph or workspace manifests directly. See [docs/configuration.md](docs/configuration.md).
+
+**What if it picks too much or too little?** Every decision is explained in the job summary. Add a config file to override names, dependencies, targets or global files; nothing else changes.
+
+## Security
+
+- **Permissions:** `contents: read` only. No secrets, no GitHub API calls, no third-party network access (it only fetches missing commits from your own `origin`).
+- **Nothing from your repository is executed.** Manifests are parsed as data with size limits and a strict JSON parser; `git` runs without a shell and with repository diff drivers disabled. Project names and paths are limited to shell-safe characters, and file names can't inject workflow commands into logs. Details: [docs/decisions.md](docs/decisions.md#security-model).
+- **What runs is what you can read:** `dist/` is committed and CI fails if it differs from a fresh build of `src/`. There is one bundled runtime dependency.
+- **Pin it:** releases are immutable. For the strictest setup, pin a full commit SHA and let Dependabot update it:
+
+  ```yaml
+  - uses: Continuous-Actions/dynamic-monorepo@<commit-sha> # v1.0.0
+  ```
+
+Report vulnerabilities privately: [SECURITY.md](SECURITY.md).
 
 ## Inputs
 
@@ -204,9 +239,6 @@ steps:
 5. **Walk the dependency graph** from the changed projects to everything that depends on them, and sort the result in dependency order.
 6. **Write outputs**, a job summary and a plan file with a reason for every project.
 
-## Security
-
-The repository's files are untrusted input. Manifests and the config file are only read, with size limits and a strict JSON parser; nothing in them is executed. Git runs through `execFile` with argument arrays, never a shell. Project names are limited to a shell-safe character set, and file names are neutralised in logs so they can't inject workflow commands. See [SECURITY.md](SECURITY.md) and [docs/decisions.md](docs/decisions.md#security-model).
 
 ## Performance
 

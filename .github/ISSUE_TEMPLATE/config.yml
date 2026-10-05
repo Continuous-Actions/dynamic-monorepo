@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/Continuous-Actions/dynamic-monorepo/discussions
+    about: Ask how to set it up for your monorepo, or share how you use it.

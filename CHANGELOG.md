@@ -3,7 +3,9 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses semantic versioning.
 
-## [Unreleased]
+## [1.0.0] - 2026-10-05
+
+First public release.
 
 ### Added
 - Zero-config auto-detection: without a config file, projects are found from marker files (package.json, go.mod, Cargo.toml, *.csproj, pyproject.toml, pom.xml, build.gradle, Dockerfile, Chart.yaml) in the committed tree, with dependencies read from the manifests and root lockfiles scoped to their ecosystem. `"detect": true` combines it with a config file.
