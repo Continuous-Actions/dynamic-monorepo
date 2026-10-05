@@ -75,7 +75,9 @@ export function resolveRange(git: Git, input: RangeInput): { range: Range; warni
         // fast-forwards and force pushes alike, and needs no shared history.
         const b = git.ensure(before, fetch);
         if (b) return { range: { kind: 'diff', base: b, head: after, how: 'push "before".."after"' }, warnings };
-        warnings.push(`push "before" commit ${before.slice(0, 12)} is unavailable (force push or garbage-collected); falling back to the default branch`);
+        // Comparing with the default branch here could under-select (e.g. a force push
+        // that rewinds a branch), so be safe and select everything.
+        return all(`push "before" commit ${before.slice(0, 12)} is unavailable (force push or garbage-collected)`, after);
       }
       // New branch (before = 000...) or unavailable before: compare to the default branch.
       const def: unknown = event['repository']?.default_branch;

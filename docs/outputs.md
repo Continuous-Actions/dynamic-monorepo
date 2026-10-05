@@ -18,7 +18,7 @@ Every list is a compact JSON array, sorted in **dependency order**: dependencies
 | `all` | `"true"`/`"false"` | Whether every project was selected, because a global file changed or there was no usable comparison. |
 | `reason` | string | Why `all` is true. |
 | `base` / `head` | SHA | The commits that were compared. `base` is empty when there was no diff. |
-| `plan_file` | path | `$RUNNER_TEMP/dynamic-monorepo-plan.json`: the full plan, including a reason for every project. |
+| `plan_file` | path | A unique `plan.json` under `$RUNNER_TEMP`: the full plan, including a reason for every project. |
 
 ## Patterns
 

@@ -1,7 +1,7 @@
 // The shared pipeline used by both the GitHub Action (main.ts) and the CLI (cli.ts):
 // config -> comparison range -> diff -> plan.
 
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { ConfigError, LIMITS, parseConfig, validateConfig, type Config, type RepoReader } from './config.ts';
 import { Git } from './git.ts';
@@ -17,7 +17,7 @@ export type EngineInput = {
   log?: (msg: string) => void;
 };
 
-/** True when there is no config file and projects come from auto-detection alone. */
+/** noConfigFile: there is no config file and projects come from auto-detection alone. */
 export type LoadedConfig = { git: Git; top: string; configRel: string; config: Config; noConfigFile: boolean };
 
 export type EngineResult = { plan: Plan; range: Range; warnings: string[]; notes: string[] };
@@ -25,30 +25,51 @@ export type EngineResult = { plan: Plan; range: Range; warnings: string[]; notes
 /** The configuration used when the default config file does not exist. */
 const AUTO = { detect: true };
 
-/** Loads the configuration from the working tree. Without the default config file, projects are auto-detected. */
-export function loadConfig(cwd: string, configInput: string, log?: (msg: string) => void): LoadedConfig {
+/**
+ * Loads the configuration. With `rev`, the config file and manifests are read from that
+ * commit (what the Action plans against); without it, from the working tree (CLI listing).
+ * Without the default config file, projects are auto-detected.
+ */
+export function loadConfig(cwd: string, configInput: string, log?: (msg: string) => void, rev?: string): LoadedConfig {
   const git = new Git(cwd, log);
-  const top = git.toplevel();
-  const configAbs = resolve(cwd, configInput);
+  // Compare real paths: the workspace may be reached through a symlink, junction or 8.3 short name.
+  const top = realpath(git.toplevel());
+  const configAbs = resolve(realpath(cwd), configInput);
   const configRel = relative(top, configAbs).split(sep).join('/');
-  if (configRel.startsWith('..') || isAbsolute(configRel)) throw new ConfigError(configInput, ['config file must be inside the repository']);
-  const reader = fsReader(top, git);
-  if (!existsSync(configAbs)) {
+  if (configRel === '..' || configRel.startsWith('../') || isAbsolute(configRel)) {
+    throw new ConfigError(configInput, ['config file must be inside the repository']);
+  }
+  const reader = rev ? gitReader(git, rev) : fsReader(top, git);
+  let text: string | undefined;
+  if (rev) {
+    text = git.show(rev, configRel);
+  } else if (existsSync(configAbs)) {
+    if (statSync(configAbs).size > LIMITS.configBytes) throw new ConfigError(configRel, [`file is larger than ${LIMITS.configBytes} bytes`]);
+    text = readFileSync(configAbs, 'utf8');
+  }
+  if (text === undefined) {
     if (configInput !== CONFIG_FILE) {
-      throw new ConfigError(configRel, ['file not found (check the "config" input; it is relative to "working-directory")']);
+      const where = rev ? ` at ${rev.slice(0, 12)}` : '';
+      const hint = rev && existsSync(configAbs) ? ' It exists in the working tree but is not committed at that revision.' : '';
+      throw new ConfigError(configRel, [`file not found${where} (check the "config" input; it is relative to "working-directory").${hint}`]);
     }
     const config = validateConfig(AUTO, `(no ${configRel}; auto-detecting projects)`, reader);
     return { git, top, configRel, config, noConfigFile: true };
   }
-  if (statSync(configAbs).size > LIMITS.configBytes) throw new ConfigError(configRel, [`file is larger than ${LIMITS.configBytes} bytes`]);
-  const config = parseConfig(readFileSync(configAbs, 'utf8'), configRel, reader);
-  return { git, top, configRel, config, noConfigFile: false };
+  return { git, top, configRel, config: parseConfig(text, configRel, reader), noConfigFile: false };
 }
 
 export function execute(input: EngineInput): EngineResult {
-  const { git, configRel, config: head, noConfigFile } = loadConfig(input.cwd, input.config, input.log);
-
+  const git = new Git(input.cwd, input.log);
   const { range, warnings } = resolveRange(git, { ...input.range, fetch: input.fetch });
+
+  // The head configuration and manifests are read from the compared head commit, not the
+  // working tree, so pull_request_target, an explicit "head" input or local edits can't
+  // make the plan disagree with the diff. Untracked and ignored files never count.
+  const headRev = range.head ?? git.resolve('HEAD');
+  if (!headRev) throw new ConfigError(input.config, ['no commit to read the configuration from']);
+  const { configRel, config: head, noConfigFile } = loadConfig(input.cwd, input.config, input.log, headRev);
+  warnings.push(...head.warnings);
 
   let changes: FileChange[] = [];
   let base: Config | null | undefined;
@@ -80,6 +101,14 @@ function baseConfig(git: Git, rev: string, configRel: string, allowAuto: boolean
   } catch (err) {
     log?.(`base configuration unreadable: ${(err as Error).message}`);
     return undefined;
+  }
+}
+
+function realpath(p: string): string {
+  try {
+    return realpathSync.native(p);
+  } catch {
+    return p;
   }
 }
 
@@ -117,10 +146,12 @@ export function fsReader(top: string, git: Git): RepoReader {
 
 /** Reads files as they were at a commit, without touching the working tree. */
 export function gitReader(git: Git, rev: string): RepoReader {
+  let dirs: Set<string> | undefined;
   return {
     listDirs: (dir) => git.listDirs(rev, dir),
     read: (path) => git.show(rev, path),
     listFiles: () => git.listFiles(rev),
     readMany: (paths) => git.readMany(rev, paths, LIMITS.configBytes),
+    dirs: () => (dirs ??= git.allDirs(rev)),
   };
 }

@@ -127,7 +127,7 @@ export function runAction(repo: Repo | string, opts: {
   for (const [k, v] of Object.entries(opts.inputs ?? {})) env[`INPUT_${k.toUpperCase()}`] = v;
   const r = spawnSync(process.execPath, [DIST], { cwd: opts.cwd ?? dir, env, encoding: 'utf8' });
   const outputs = parseOutputs(readFileSync(outFile, 'utf8'));
-  const planFile = join(work, 'dynamic-monorepo-plan.json');
+  const planFile = outputs['plan_file'] ?? join(work, 'missing');
   return {
     code: r.status ?? -1,
     stdout: (r.stdout ?? '') + (r.stderr ?? ''),
