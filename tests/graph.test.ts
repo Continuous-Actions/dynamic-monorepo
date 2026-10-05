@@ -77,3 +77,21 @@ describe('published config files', () => {
     }
   });
 });
+
+describe('job summary escaping', () => {
+  it('file names with newlines cannot break out of table cells, blockquotes or lists', async () => {
+    const { markdownReport } = await import('../src/report.ts');
+    const evil = 'a |\n| forged | row |\n# Injected heading\n> quote';
+    const plan: any = {
+      all: true, allReason: `global file changed: ${evil}`, changed: ['api'], affected: ['api'],
+      targets: { build: ['api'], test: [], deploy: [] }, added: [], deleted: [], renamed: [], skipped: [], paths: { api: 'api' },
+      reasons: new Map([['api', { kind: 'files', files: [evil], count: 1 }]]),
+      files: { total: 2, ignored: 0, unowned: [evil], global: [evil] },
+    };
+    const md = markdownReport(plan, { kind: 'all', head: 'x', why: evil });
+    for (const line of md.split('\n')) {
+      expect(line).not.toMatch(/^(# Injected|\| forged|> quote)/);
+    }
+    expect(md).not.toContain('Injected heading\n');
+  });
+});
