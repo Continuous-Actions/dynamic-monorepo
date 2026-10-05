@@ -277,6 +277,21 @@ describe('Go modules with several binaries', () => {
   });
 });
 
+describe('workspace membership', () => {
+  it('packages outside the workspace globs are not linked to local packages by name', () => {
+    const repo = new Repo();
+    const before = repo.commit('init', {
+      'package.json': JSON.stringify({ private: true, workspaces: ['packages/*'] }),
+      'packages/ui/package.json': '{"name":"ui"}',
+      'packages/app/package.json': JSON.stringify({ name: 'app', dependencies: { ui: 'workspace:*' } }),
+      'examples/demo/package.json': JSON.stringify({ name: 'demo', dependencies: { ui: '^1.0.0' } }),
+    });
+    const after = repo.commit('ui', { 'packages/ui/x.js': '1' });
+    const r = runAction(repo, { event: 'push', payload: { ref: 'refs/heads/main', before, after, repository: { default_branch: 'main' } } });
+    expect(r.json('affected')).toEqual(['ui', 'app']);
+  });
+});
+
 describe('Python path dependencies', () => {
   it('links uv sources and Poetry path dependencies', () => {
     const repo = new Repo();

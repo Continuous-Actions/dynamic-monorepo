@@ -3,6 +3,11 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses semantic versioning.
 
+## [1.3.1] - 2026-10-06
+
+### Fixed
+- Node: packages outside the workspace globs (for example `examples/*` that install published versions) are no longer linked to local packages by name.
+
 ## [1.3.0] - 2026-10-06
 
 ### Added

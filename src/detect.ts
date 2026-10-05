@@ -5,6 +5,8 @@
 // only read, never executed, and the scan is bounded.
 
 import type { Target } from './config.ts';
+import { load, CORE_SCHEMA } from 'js-yaml';
+import { compileSegments, validatePattern } from './glob.ts';
 import { parseToml, resolveRel, stripGoComments, type RepoReader } from './infer.ts';
 
 export const DETECT_KINDS = ['node', 'go', 'cargo', 'python', 'maven', 'gradle', 'dotnet', 'docker', 'helm'] as const;
@@ -117,6 +119,8 @@ export function detect(reader: RepoReader, validName: (name: string) => boolean,
   const toRead = [...dirs.values()].flatMap((d) => d.markers).filter((f) => manifestNames.has(f.slice(f.lastIndexOf('/') + 1)) || /\.(cs|fs|vb)proj$/.test(f));
   const fileSet = new Set(files);
   if (!dirs.has('.') && fileSet.has('Cargo.toml')) toRead.push('Cargo.toml');
+  if (!dirs.has('.') && fileSet.has('package.json')) toRead.push('package.json');
+  if (fileSet.has('pnpm-workspace.yaml')) toRead.push('pnpm-workspace.yaml');
   const text = reader.readMany(toRead);
   const at = (dir: string, base: string) => text.get(dir === '.' ? base : `${dir}/${base}`);
 
@@ -176,6 +180,27 @@ export function detect(reader: RepoReader, validName: (name: string) => boolean,
     taken.add(n);
   }
 
+  // Workspace membership (npm/Yarn/Bun `workspaces`, pnpm-workspace.yaml). Without a
+  // workspace declaration every package.json folder counts as a member.
+  const wsPatterns: string[] = [];
+  const rootWs = rootPkg?.workspaces;
+  if (Array.isArray(rootWs)) wsPatterns.push(...rootWs);
+  else if (Array.isArray(rootWs?.packages)) wsPatterns.push(...rootWs.packages);
+  const pnpmWs = text.get('pnpm-workspace.yaml');
+  if (pnpmWs !== undefined) {
+    try {
+      const doc = load(pnpmWs, { schema: CORE_SCHEMA }) as any;
+      if (Array.isArray(doc?.packages)) wsPatterns.push(...doc.packages);
+    } catch {
+      // unreadable pnpm-workspace.yaml: fall back to treating every package as a member
+    }
+  }
+  const clean = (p: string) => p.replace(/^!/, '').trim().replace(/^\.\//, '').replace(/\/+$/, '');
+  const memberTests = wsPatterns.filter((p) => typeof p === 'string' && !p.startsWith('!') && validatePattern(clean(p)) === undefined).map((p) => compileSegments(clean(p)));
+  const excludeTests = wsPatterns.filter((p) => typeof p === 'string' && p.startsWith('!') && validatePattern(clean(p)) === undefined).map((p) => compileSegments(clean(p)));
+  const isWorkspaceMember = (dir: string) =>
+    memberTests.length === 0 || (memberTests.some((t) => t(dir)) && !excludeTests.some((t) => t(dir)));
+
   // 4. Dependencies between detected projects, from the manifests.
   const edges = new Map<string, Set<string>>([...dirs.keys()].map((d) => [d, new Set<string>()]));
   const link = (from: string, toDir: string | undefined) => {
@@ -187,7 +212,7 @@ export function detect(reader: RepoReader, validName: (name: string) => boolean,
   for (const [dir, d] of dirs) {
     if (d.kinds.has('node')) {
       const n = json(at(dir, 'package.json'))?.name;
-      if (typeof n === 'string') {
+      if (typeof n === 'string' && isWorkspaceMember(dir)) {
         if (nodeByName.has(n) && nodeByName.get(n) !== dir) ambiguous.add(n);
         else nodeByName.set(n, dir);
       }
@@ -219,7 +244,9 @@ export function detect(reader: RepoReader, validName: (name: string) => boolean,
       const pkg = json(at(dir, 'package.json'));
       for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
         const deps = pkg?.[field];
-        if (deps && typeof deps === 'object' && !Array.isArray(deps)) for (const k of Object.keys(deps)) link(dir, nodeByName.get(k));
+        // Only workspace members resolve sibling packages locally; a package outside the
+        // workspace globs (e.g. examples/*) installs the published version from the registry.
+        if (deps && typeof deps === 'object' && !Array.isArray(deps) && isWorkspaceMember(dir)) for (const k of Object.keys(deps)) link(dir, nodeByName.get(k));
       }
     }
     if (d.kinds.has('go')) {
