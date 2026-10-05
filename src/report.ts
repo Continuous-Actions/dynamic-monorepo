@@ -62,7 +62,11 @@ export function textReport(plan: Plan, range: Range, verbose: boolean): string {
   return lines.join('\n');
 }
 
-const esc = (s: string) => s.replace(/[&<>"'|`\\[\]*_]/g, (c) => `&#${c.charCodeAt(0)};`);
+// File names are attacker-controlled (they come from the PR). Collapse control
+// characters first so nothing can start a new Markdown line (heading, list,
+// blockquote, table row), then entity-encode everything with inline meaning.
+export const esc = (s: string) =>
+  s.replace(/[\x00-\x1f\x7f\u2028\u2029]+/g, ' ').replace(/[&<>"'|`\\\[\]*_#~@:!=-]/g, (c) => `&#${c.charCodeAt(0)};`);
 
 export function markdownReport(plan: Plan, range: Range): string {
   const out: string[] = [];
