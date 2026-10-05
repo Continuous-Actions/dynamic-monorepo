@@ -1,6 +1,6 @@
 # Runs the real action on a real runner against fixture monorepos and
 # consumes its outputs exactly as users would: fromJSON() in a dynamic matrix.
-name: Integration
+name: Dynamic-Monorepo
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: integration-${{ github.ref }}
+  group: dynamic-monorepo-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -40,6 +40,7 @@ jobs:
         run: cat "${{ steps.plan.outputs.plan_file }}"
 
   build:
+    name: ${{ matrix.project }} / build
     needs: plan
     if: needs.plan.outputs.has_build == 'true'
     runs-on: ubuntu-latest

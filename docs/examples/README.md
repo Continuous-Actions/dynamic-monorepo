@@ -15,4 +15,4 @@ shared ◀─ auth ◀─ api ◀─ portal
   │        └───────┴──── admin
   └── worker ◀── reporting (also depends on api)
 ```
-The `realistic` config is exercised on real runners by [`.github/workflows/integration.yml`](../../.github/workflows/integration.yml).
+The `realistic` config is exercised on real runners by [`.github/workflows/integration.yml` (the "Dynamic-Monorepo" workflow)](../../.github/workflows/integration.yml).
