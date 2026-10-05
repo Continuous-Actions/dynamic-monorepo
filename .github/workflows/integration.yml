@@ -1,0 +1,115 @@
+# Runs the real action on a real runner against fixture monorepos and
+# consumes its outputs exactly as users would: fromJSON() in a dynamic matrix.
+name: Integration
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.plan.outputs.changed }}
+      affected: ${{ steps.plan.outputs.affected }}
+      build: ${{ steps.plan.outputs.build }}
+      test: ${{ steps.plan.outputs.test }}
+      deploy: ${{ steps.plan.outputs.deploy }}
+      paths: ${{ steps.plan.outputs.paths }}
+      has_build: ${{ steps.plan.outputs.has_build }}
+      skipped: ${{ steps.plan.outputs.skipped }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build fixture repo (auth library changed)
+        run: scripts/make-fixture.sh medium "$RUNNER_TEMP/medium" libs/auth/src/token.ts
+      - uses: ./
+        id: plan
+        with:
+          working-directory: ${{ runner.temp }}/medium
+          base: HEAD~1
+      - name: Upload plan
+        run: cat "${{ steps.plan.outputs.plan_file }}"
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.has_build == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJSON(needs.plan.outputs.build) }}
+    steps:
+      - name: Build ${{ matrix.project }}
+        env:
+          PROJECT: ${{ matrix.project }}
+          PROJECT_PATH: ${{ fromJSON(needs.plan.outputs.paths)[matrix.project] }}
+        run: |
+          echo "Building $PROJECT in $PROJECT_PATH"
+          test -n "$PROJECT_PATH"
+
+  verify:
+    needs: [plan, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert exact outputs
+        env:
+          CHANGED: ${{ needs.plan.outputs.changed }}
+          AFFECTED: ${{ needs.plan.outputs.affected }}
+          BUILD: ${{ needs.plan.outputs.build }}
+          DEPLOY: ${{ needs.plan.outputs.deploy }}
+          SKIPPED: ${{ needs.plan.outputs.skipped }}
+          N: ${{ fromJSON(needs.plan.outputs.affected)[0] }}
+        run: |
+          set -e
+          check() { [ "$2" = "$3" ] || { echo "::error::$1: expected $3, got $2"; exit 1; }; echo "ok $1 = $2"; }
+          check changed  "$CHANGED"  '["auth"]'
+          check affected "$AFFECTED" '["auth","api","admin","portal","reporting"]'
+          check build    "$BUILD"    '["auth","api","admin","portal","reporting"]'
+          check deploy   "$DEPLOY"   '["api","admin","portal","reporting"]'
+          check skipped  "$SKIPPED"  '["shared","worker"]'
+          check first    "$N"        'auth'
+
+  scenarios:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Global file change selects everything
+        run: scripts/make-fixture.sh medium "$RUNNER_TEMP/global" package-lock.json
+      - uses: ./
+        id: global
+        with: { working-directory: '${{ runner.temp }}/global', base: HEAD~1 }
+      - name: Ignored docs change selects nothing
+        run: scripts/make-fixture.sh medium "$RUNNER_TEMP/docs" docs/guide.md
+      - uses: ./
+        id: docs
+        with: { working-directory: '${{ runner.temp }}/docs', base: HEAD~1 }
+      - name: Cyclic config fails clearly
+        run: |
+          scripts/make-fixture.sh small "$RUNNER_TEMP/cycle"
+          printf '  shared2:\n    path: libs/shared2\n    dependsOn: [web]\n' >> "$RUNNER_TEMP/cycle/.github/dynamic-monorepos.yml"
+          sed -i 's/^  shared:$/  shared:\n    dependsOn: [shared2]/' "$RUNNER_TEMP/cycle/.github/dynamic-monorepos.yml"
+      - uses: ./
+        id: cycle
+        continue-on-error: true
+        with: { working-directory: '${{ runner.temp }}/cycle' }
+      - name: Assert
+        env:
+          G_ALL: ${{ steps.global.outputs.all }}
+          G_BUILD: ${{ steps.global.outputs.build }}
+          D_HAS: ${{ steps.docs.outputs.has_changes }}
+          C_OUTCOME: ${{ steps.cycle.outcome }}
+        run: |
+          set -e
+          [ "$G_ALL" = true ] && [ "$(echo "$G_BUILD" | jq length)" = 7 ]
+          [ "$D_HAS" = false ]
+          [ "$C_OUTCOME" = failure ]
+          echo "all scenarios ok"

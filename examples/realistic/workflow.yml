@@ -1,0 +1,94 @@
+# .github/workflows/ci.yml — realistic: build, test and deploy fan-out,
+# merge queue support and a single required-check gate job.
+name: CI
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+      test: ${{ steps.plan.outputs.test }}
+      deploy: ${{ steps.plan.outputs.deploy }}
+      paths: ${{ steps.plan.outputs.paths }}
+      has_build: ${{ steps.plan.outputs.has_build }}
+      has_test: ${{ steps.plan.outputs.has_test }}
+      has_deploy: ${{ steps.plan.outputs.has_deploy }}
+    steps:
+      - uses: actions/checkout@v7          # default fetch-depth: 1 is fine
+      - uses: OpenMind-SI/dynamic-monorepos@v1
+        id: plan
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.has_build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJSON(needs.plan.outputs.build) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: 24, cache: npm }
+      - run: npm ci
+      - name: Build
+        env:
+          PROJECT: ${{ matrix.project }}
+        run: npm run build --workspace "$PROJECT"
+
+  test:
+    needs: plan
+    if: needs.plan.outputs.has_test == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJSON(needs.plan.outputs.test) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: 24, cache: npm }
+      - run: npm ci
+      - name: Test
+        working-directory: ${{ fromJSON(needs.plan.outputs.paths)[matrix.project] }}
+        run: npm test
+
+  deploy:
+    needs: [plan, build, test]
+    if: github.ref == 'refs/heads/main' && needs.plan.outputs.has_deploy == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    strategy:
+      max-parallel: 2
+      matrix:
+        project: ${{ fromJSON(needs.plan.outputs.deploy) }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Deploy
+        env:
+          PROJECT: ${{ matrix.project }}
+        run: ./scripts/deploy.sh "$PROJECT"
+
+  # Make THIS the only required status check. It passes when every needed job
+  # passed or was skipped because nothing relevant changed.
+  ci-ok:
+    if: always()
+    needs: [plan, build, test]
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          [[ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" == "false" ]]

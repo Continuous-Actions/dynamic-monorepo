@@ -1,0 +1,27 @@
+{
+  "name": "dynamic-monorepos",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dependency-aware affected-project planning for monorepos in GitHub Actions",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "bench": "node bench/bench.ts",
+    "check": "npm run typecheck && npm run build && npm test"
+  },
+  "dependencies": {
+    "js-yaml": "5.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.1",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2",
+    "vitest": "5.0.3"
+  }
+}

@@ -1,0 +1,75 @@
+name: Dynamic Monorepos
+description: Map changed files to projects, walk the dependency graph, and output affected-project matrices with reasons.
+author: OpenMind-SI
+branding:
+  icon: share-2
+  color: blue
+
+inputs:
+  config:
+    description: Path to the configuration file, relative to the working directory.
+    default: .github/dynamic-monorepos.yml
+  base:
+    description: >-
+      Optional ref or SHA to compare against (uses the merge-base with HEAD).
+      Overrides event-based detection. Required to get a diff on workflow_dispatch/schedule.
+    default: ''
+  head:
+    description: Revision to compare. Defaults to the checked-out commit.
+    default: HEAD
+  fetch:
+    description: Fetch missing commits from origin (by SHA, bounded deepening) when the checkout is shallow.
+    default: 'true'
+  summary:
+    description: Write a job summary explaining why each project was selected.
+    default: 'true'
+  verbose:
+    description: Log every skipped project, files outside any project, git commands and the full plan JSON.
+    default: 'false'
+  working-directory:
+    description: Directory inside the repository to run in.
+    default: '.'
+
+outputs:
+  changed:
+    description: JSON array of projects that contain changed files (or were added/redefined in the config).
+  affected:
+    description: JSON array of changed projects plus everything that transitively depends on them, in dependency order.
+  build:
+    description: JSON array of affected projects with the "build" target.
+  test:
+    description: JSON array of affected projects with the "test" target.
+  deploy:
+    description: JSON array of affected projects with the "deploy" target.
+  added:
+    description: JSON array of projects that exist in the config at head but not at base.
+  deleted:
+    description: JSON array of projects that existed at base but no longer exist.
+  renamed:
+    description: 'JSON array of {"from","to"} objects for projects renamed at the same path.'
+  skipped:
+    description: JSON array of projects that are not affected.
+  paths:
+    description: 'JSON object mapping each affected project to its directory, e.g. fromJSON(needs.plan.outputs.paths)[matrix.project].'
+  has_changes:
+    description: '"true" if any project is affected.'
+  has_build:
+    description: '"true" if the build list is non-empty.'
+  has_test:
+    description: '"true" if the test list is non-empty.'
+  has_deploy:
+    description: '"true" if the deploy list is non-empty.'
+  all:
+    description: '"true" if every project was selected (global file changed, or no usable comparison base).'
+  reason:
+    description: Why every project was selected, when all is "true".
+  base:
+    description: Base commit SHA that was compared (empty when no diff was possible).
+  head:
+    description: Head commit SHA that was compared.
+  plan_file:
+    description: Path to a JSON file with the full plan, including per-project reasons.
+
+runs:
+  using: node24
+  main: dist/index.js
