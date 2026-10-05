@@ -177,7 +177,7 @@ The planner is dominated by Node startup and `git`, not by graph work. Measured 
 
 - 1,000 projects with 10,000 changed files plans in well under 100 ms in-process.
 - 10,000 projects with 100,000 changed files still plans in under a second.
-- End to end on a real repository (including Node startup and `git diff`), the action typically finishes in a few hundred milliseconds.
+- End to end on a hosted `ubuntu-latest` runner, including Node startup and `git diff`: about **50 ms** for 10 projects, **105 ms** for 1,000 projects with 1,000 changed files, and **233 ms** for 5,000 projects with 10,000 changed files.
 
 ## Security
 
