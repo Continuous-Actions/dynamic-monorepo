@@ -65,6 +65,9 @@ export function textReport(plan: Plan, range: Range, verbose: boolean): string {
 // File names are attacker-controlled (they come from the PR). Collapse control
 // characters first so nothing can start a new Markdown line (heading, list,
 // blockquote, table row), then entity-encode everything with inline meaning.
+/** Code span for project names (already restricted to a safe charset; this is defence in depth). */
+const code = (s: string) => `\`${s.replace(/[\x00-\x1f\x7f\u2028\u2029`|]+/g, ' ')}\``;
+
 export const esc = (s: string) =>
   s.replace(/[\x00-\x1f\x7f\u2028\u2029]+/g, ' ').replace(/[&<>"'|`\\\[\]*_#~@:!=-]/g, (c) => `&#${c.charCodeAt(0)};`);
 
