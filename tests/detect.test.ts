@@ -119,6 +119,22 @@ describe('auto-detection without a config file', () => {
     expect([...r.json('affected'), ...r.json('skipped')]).toEqual(['svc']);
   });
 
+  it('pnpm: the root package.json is not a project when pnpm-workspace.yaml exists', () => {
+    const repo = new Repo();
+    const before = repo.commit('init', {
+      'package.json': JSON.stringify({ name: 'monorepo', private: true }),
+      'pnpm-workspace.yaml': "packages:\n  - 'libs/*'\n",
+      'pnpm-lock.yaml': '',
+      'libs/a/package.json': pkg('a'),
+      'libs/b/package.json': pkg('b', { a: 'workspace:^' }),
+    });
+    const after = repo.commit('lock', { 'pnpm-lock.yaml': 'v2', 'scripts/x.sh': 'echo' });
+    const r = push(repo, before, after);
+    expect(r.json('affected')).toEqual(['a', 'b']);
+    expect(r.json('skipped')).toEqual([]);
+    expect(r.plan.files.unowned).toEqual(['scripts/x.sh']);
+  });
+
   it('cargo: a bare workspace root is not a project; path dependencies are edges', () => {
     const repo = new Repo();
     const before = repo.commit('init', {

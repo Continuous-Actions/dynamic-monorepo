@@ -120,7 +120,9 @@ export function detect(reader: RepoReader, validName: (name: string) => boolean,
     if (d.kinds.size === 0) dirs.delete(dir);
     notes.push(why);
   };
-  if (rootPkg && rootPkg.workspaces !== undefined) drop('.', 'node', 'package.json at the root declares workspaces, so it is not a project itself');
+  if (rootPkg && (rootPkg.workspaces !== undefined || fileSet.has('pnpm-workspace.yaml'))) {
+    drop('.', 'node', 'the root package.json is a workspace root (workspaces or pnpm-workspace.yaml), so it is not a project itself');
+  }
   const cargoManifests = new Map<string, any>();
   for (const [dir, d] of [...dirs]) {
     if (!d.kinds.has('cargo')) continue;
