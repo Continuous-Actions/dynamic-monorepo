@@ -75,7 +75,7 @@ export class Owners {
 
 export function plan(input: PlanInput): Plan {
   const { head, configPath, changes } = input;
-  const graph = new Graph(head.projects.values());
+  const graph = new Graph(head.projects.values(), { allowCycles: true });
   const owners = new Owners(head);
   const reasons = new Map<string, Reason>();
   const fileHits = new Map<string, string[]>();
@@ -130,7 +130,6 @@ export function plan(input: PlanInput): Plan {
   const base = input.base;
 
   if (base) {
-    const headByPath = new Map([...head.projects.values()].map((p) => [p.path, p.name]));
     const baseByPath = new Map([...base.projects.values()].map((p) => [p.path, p.name]));
     for (const p of head.projects.values()) {
       const old = base.projects.get(p.name);
@@ -142,8 +141,9 @@ export function plan(input: PlanInput): Plan {
       if (oldName !== undefined && !head.projects.has(oldName)) renamed.push({ from: oldName, to: p.name });
       else added.push(p.name);
     }
+    const renamedFrom = new Set(renamed.map((r) => r.from));
     for (const p of base.projects.values()) {
-      if (!head.projects.has(p.name) && headByPath.get(p.path) === undefined) deleted.push(p.name);
+      if (!head.projects.has(p.name) && !renamedFrom.has(p.name)) deleted.push(p.name);
     }
     // Renamed AND moved: most of a deleted project's files were git-renamed into one added project.
     for (const pair of movedProjects(changes, new Owners(base), owners, new Set(deleted), new Set(added))) {

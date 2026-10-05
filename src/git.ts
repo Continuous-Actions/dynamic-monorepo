@@ -84,12 +84,13 @@ export class Git {
     const local = this.resolve(rev);
     if (local || !allowFetch) return local;
     if (SHA_RE.test(rev)) {
-      this.fetch([rev], 1);
+      // Never turn a full clone into a shallow one: only limit depth if already shallow.
+      this.fetch([rev], this.isShallow() ? 1 : undefined);
       return this.resolve(rev);
     }
     // A branch name: fetch it into its remote-tracking ref.
     if (REF_RE.test(rev) && !rev.startsWith('refs/')) {
-      this.fetch([`+refs/heads/${rev}:refs/remotes/origin/${rev}`], 1);
+      this.fetch([`+refs/heads/${rev}:refs/remotes/origin/${rev}`], this.isShallow() ? 1 : undefined);
       return this.resolve(`origin/${rev}`) ?? this.resolve(rev);
     }
     return undefined;
@@ -110,12 +111,19 @@ export class Git {
 
   /** Name-status diff between two commits (both must be present locally). */
   diff(base: string, head: string): FileChange[] {
-    const out = this.run(['diff', '--name-status', '-z', '-M', '--no-ext-diff', '--no-textconv', '--no-color', base, head, '--'])!;
+    // --ignore-submodules=none / --no-relative: repository or runner git config must not hide changes.
+    const out = this.run(['diff', '--name-status', '-z', '-M', '--no-ext-diff', '--no-textconv', '--no-color', '--ignore-submodules=none', '--no-relative', base, head, '--'])!;
     return parseNameStatus(out);
   }
 
   show(rev: string, path: string): string | undefined {
     return this.run(['show', `${rev}:${path}`], { allowFail: true });
+  }
+
+  /** Every directory in the tree at a revision. */
+  allDirs(rev: string): Set<string> {
+    const out = this.run(['ls-tree', '-r', '-d', '-z', '--name-only', '--end-of-options', rev], { allowFail: true }) ?? '';
+    return new Set(out.split('\0').filter(Boolean));
   }
 
   /** Immediate sub-directories of `dir` at a revision. */

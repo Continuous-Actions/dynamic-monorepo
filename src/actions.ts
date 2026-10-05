@@ -48,10 +48,20 @@ export function command(cmd: 'error' | 'warning' | 'notice' | 'debug', message: 
   process.stdout.write(`::${cmd}${p ? ` ${p}` : ''}::${escapeData(message)}${EOL}`);
 }
 
+/**
+ * Makes untrusted text (file names, config values) inert in the log: the runner
+ * treats "::cmd::" after leading whitespace and "##[cmd]" anywhere in a line as
+ * workflow commands, and also splits lines on a lone \r.
+ */
+export function neutralise(line: string): string {
+  return line
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '?')
+    .replace(/::/g, ':\u200b:')
+    .replace(/##\[/g, '#\u200b#[');
+}
+
 export function info(message: string): void {
-  // Neutralise any line that would otherwise be interpreted as a workflow command
-  // (file names come from the repository and are untrusted).
-  process.stdout.write(message.split(/\r?\n/).map((l) => (l.startsWith('::') ? ` ${l}` : l)).join(EOL) + EOL);
+  process.stdout.write(message.split(/\r\n|\r|\n|\u2028|\u2029/).map(neutralise).join(EOL) + EOL);
 }
 
 export function group(title: string, body: () => void): void {

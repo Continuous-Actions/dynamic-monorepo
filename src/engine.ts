@@ -1,7 +1,7 @@
 // The shared pipeline used by both the GitHub Action (main.ts) and the CLI (cli.ts):
 // config -> comparison range -> diff -> plan.
 
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { ConfigError, LIMITS, parseConfig, type Config, type RepoReader } from './config.ts';
 import { Git } from './git.ts';
@@ -21,17 +21,28 @@ export type EngineResult = { plan: Plan; range: Range; warnings: string[] };
 
 export function execute(input: EngineInput): EngineResult {
   const git = new Git(input.cwd, input.log);
-  const top = git.toplevel();
-  const configAbs = resolve(input.cwd, input.config);
+  // Compare real paths: the workspace may be reached through a symlink, junction or 8.3 short name.
+  const top = realpath(git.toplevel());
+  const configAbs = resolve(realpath(input.cwd), input.config);
   const configRel = relative(top, configAbs).split(sep).join('/');
-  if (configRel.startsWith('..') || isAbsolute(configRel)) throw new ConfigError(input.config, ['config file must be inside the repository']);
-  if (!existsSync(configAbs)) {
-    throw new ConfigError(configRel, [`file not found (create it, or set the "config" input). See https://github.com/OpenMind-SI/${NAME}#configuration`]);
+  if (configRel === '..' || configRel.startsWith('../') || isAbsolute(configRel)) {
+    throw new ConfigError(input.config, ['config file must be inside the repository']);
   }
-  if (statSync(configAbs).size > LIMITS.configBytes) throw new ConfigError(configRel, [`file is larger than ${LIMITS.configBytes} bytes`]);
-  const head = parseConfig(readFileSync(configAbs, 'utf8'), configRel, fsReader(top));
 
   const { range, warnings } = resolveRange(git, { ...input.range, fetch: input.fetch });
+
+  // The head configuration and manifests are read from the compared head commit, not the
+  // working tree, so pull_request_target, an explicit "head" input and local edits can't
+  // make the plan disagree with the diff. Untracked and ignored files never count.
+  const headRev = range.head ?? git.resolve('HEAD');
+  if (!headRev) throw new ConfigError(configRel, ['no commit to read the configuration from']);
+  const headText = git.show(headRev, configRel);
+  if (headText === undefined) {
+    const hint = existsSync(configAbs) ? ' It exists in the working tree but is not committed at that revision.' : '';
+    throw new ConfigError(configRel, [`file not found at ${headRev.slice(0, 12)}.${hint} Create it, or set the "config" input. See https://github.com/OpenMind-SI/${NAME}#configuration`]);
+  }
+  const head = parseConfig(headText, configRel, gitReader(git, headRev));
+  warnings.push(...head.warnings);
 
   let changes: FileChange[] = [];
   let base: Config | null | undefined;
@@ -50,6 +61,14 @@ export function execute(input: EngineInput): EngineResult {
   }
   const result = plan({ head, base, configPath: configRel, changes, forceAll: range.kind === 'all' ? range.why : undefined });
   return { plan: result, range, warnings };
+}
+
+function realpath(p: string): string {
+  try {
+    return realpathSync.native(p);
+  } catch {
+    return p;
+  }
 }
 
 /** Reads the working tree. Paths are repo-relative and already validated. */
@@ -76,5 +95,10 @@ export function fsReader(top: string): RepoReader {
 
 /** Reads files as they were at a commit, without touching the working tree. */
 export function gitReader(git: Git, rev: string): RepoReader {
-  return { listDirs: (dir) => git.listDirs(rev, dir), read: (path) => git.show(rev, path) };
+  let dirs: Set<string> | undefined;
+  return {
+    listDirs: (dir) => git.listDirs(rev, dir),
+    read: (path) => git.show(rev, path),
+    dirs: () => (dirs ??= git.allDirs(rev)),
+  };
 }

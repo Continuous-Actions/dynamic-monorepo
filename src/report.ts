@@ -69,7 +69,7 @@ const code = (s: string) => `\`${s.replace(/[\x00-\x1f\x7f\u2028\u2029`|]+/g, ' 
 // characters first so nothing can start a new Markdown line (heading, list,
 // blockquote, table row), then entity-encode everything with inline meaning.
 export const esc = (s: string) =>
-  s.replace(/[\x00-\x1f\x7f\u2028\u2029]+/g, ' ').replace(/[&<>"'|`\\\[\]*_#~@:!=-]/g, (c) => `&#${c.charCodeAt(0)};`);
+  s.replace(/[\x00-\x1f\x7f\u2028\u2029]+/g, ' ').replace(/[&<>"'|`\\\[\]*_#~@:!=.-]/g, (c) => `&#${c.charCodeAt(0)};`);
 
 export function markdownReport(plan: Plan, range: Range): string {
   const out: string[] = [];
