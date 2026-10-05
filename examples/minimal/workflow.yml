@@ -1,0 +1,35 @@
+# .github/workflows/ci.yml — minimal: build only what changed (plus dependents).
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+      has_build: ${{ steps.plan.outputs.has_build }}
+      paths: ${{ steps.plan.outputs.paths }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: OpenMind-SI/dynamic-monorepos@v1
+        id: plan
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.has_build == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJSON(needs.plan.outputs.build) }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build
+        working-directory: ${{ fromJSON(needs.plan.outputs.paths)[matrix.project] }}
+        run: echo "build here"

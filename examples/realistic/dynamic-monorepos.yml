@@ -1,0 +1,39 @@
+# Realistic mid-size monorepo:
+#
+#   shared <- auth <- api <- portal
+#      ^        ^       ^--- admin (also auth)
+#      |        '----------- admin
+#      '--- worker <- reporting (also api)
+projects:
+  shared:
+    path: libs/shared
+  auth:
+    path: libs/auth
+    dependsOn: [shared]
+  api:
+    path: services/api
+    dependsOn: [shared, auth]
+    targets: [build, test, deploy]
+  worker:
+    path: services/worker
+    dependsOn: [shared]
+    targets: [build, test, deploy]
+  portal:
+    path: apps/portal
+    dependsOn: [api]
+    targets: [build, test, deploy]
+  admin:
+    path: apps/admin
+    dependsOn: [api, auth]
+    targets: [build, test, deploy]
+  reporting:
+    path: apps/reporting
+    dependsOn: [worker, api]
+    targets: [build, deploy]
+
+global:
+  - package-lock.json
+  - tsconfig.base.json
+ignore:
+  - "**/*.md"
+  - "docs/**"
