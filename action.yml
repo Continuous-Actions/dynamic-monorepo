@@ -1,5 +1,5 @@
 name: Dynamic Monorepo
-description: Find the monorepo projects a change affects (no config needed) and output build, test, deploy and docker matrices with reasons.
+description: "Zero-config monorepo CI. Detects affected projects and dependencies from the git diff, outputs build/test/deploy matrices."
 author: Continuous-Actions
 branding:
   icon: share-2

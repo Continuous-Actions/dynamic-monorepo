@@ -1,6 +1,6 @@
 # Architecture decisions
 
-These are short records of *why* the action works the way it does. Research notes are in [research.md](research.md) and [research-runtime.md](research-runtime.md).
+These are short records of *why* the action works the way it does.
 
 ## Naming
 

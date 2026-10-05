@@ -1,0 +1,64 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>hero</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; width: 1280px; height: 640px; font-family: "Segoe UI", -apple-system, system-ui, sans-serif; background: #0d1117; color: #e6edf3; display: flex; flex-direction: column; }
+  header { padding: 34px 48px 10px; }
+  h1 { margin: 0; font-size: 46px; letter-spacing: -0.5px; }
+  h1 span { color: #58a6ff; }
+  .tag { margin-top: 8px; font-size: 22px; color: #9da7b3; }
+  main { flex: 1; align-content: start; padding-bottom: 10px; display: grid; grid-template-columns: 400px 64px 1fr; gap: 0; padding: 18px 48px 36px; align-items: stretch; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 18px 20px; }
+  .label { font-size: 13px; text-transform: uppercase; letter-spacing: 1.2px; color: #7d8590; margin-bottom: 10px; }
+  .diff { font-family: Consolas, "Cascadia Mono", monospace; font-size: 15px; line-height: 1.75; white-space: nowrap; }
+  .m { color: #d29922; } .dim { color: #6e7681; }
+  .arrow { display: flex; align-items: center; justify-content: center; font-size: 44px; color: #58a6ff; }
+  table { width: 100%; border-collapse: collapse; font-size: 16px; }
+  th { text-align: left; color: #7d8590; font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; padding: 4px 8px 8px; border-bottom: 1px solid #30363d; }
+  td { padding: 9px 8px; border-bottom: 1px solid #21262d; vertical-align: top; }
+  code { font-family: Consolas, "Cascadia Mono", monospace; color: #79c0ff; }
+  .pill { display: inline-block; font-size: 12.5px; padding: 1px 8px; border-radius: 10px; margin-right: 4px; background: #1f6feb33; color: #79c0ff; border: 1px solid #1f6feb66; }
+  .pill.d { background: #23863633; color: #56d364; border-color: #23863666; }
+  .why { color: #9da7b3; font-size: 15px; }
+  .skip td { color: #6e7681; }
+  .jobs { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; font-size: 14px; }
+  .job { padding: 4px 10px; border-radius: 6px; background: #0f2a1a; border: 1px solid #238636; color: #56d364; }
+  .job.s { background: #161b22; border-color: #30363d; color: #6e7681; }
+  .zero { position: absolute; right: 48px; top: 40px; font-size: 18px; color: #56d364; border: 1px solid #238636; padding: 6px 14px; border-radius: 20px; background: #0f2a1a; }
+</style></head>
+<body>
+<div class="zero">zero config</div>
+<header>
+  <h1><span>dynamic-monorepo</span> — build only what changed</h1>
+  <div class="tag">Reads the git diff, finds your projects and their dependencies, outputs a ready-made matrix.</div>
+</header>
+<main>
+  <div class="card">
+    <div class="label">Pull request changes</div>
+    <div class="diff"><span class="m">M</span> libs/shared/index.js</div>
+    <div class="label" style="margin-top:22px">Detected (no config file)</div>
+    <div class="diff dim">
+      libs/shared &nbsp;&nbsp;&nbsp;package.json<br>
+      services/api &nbsp;&nbsp;package.json, Dockerfile<br>
+      apps/web &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;package.json<br>
+      libs/geo &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;go.mod<br>
+      services/worker go.mod, Dockerfile
+    </div>
+  </div>
+  <div class="arrow">➜</div>
+  <div class="card">
+    <div class="label">Job summary — 3 of 5 projects affected</div>
+    <table>
+      <tr><th>Project</th><th>Targets</th><th>Why</th></tr>
+      <tr><td><code>@demo/shared</code></td><td><span class="pill">build</span><span class="pill">test</span></td><td class="why">1 changed file</td></tr>
+      <tr><td><code>@demo/api</code></td><td><span class="pill">build</span><span class="pill">test</span><span class="pill d">docker</span></td><td class="why">depends on shared → api</td></tr>
+      <tr><td><code>@demo/web</code></td><td><span class="pill">build</span><span class="pill">test</span></td><td class="why">depends on shared → web</td></tr>
+      <tr class="skip"><td>libs/geo, services/worker</td><td>skipped</td><td>not affected</td></tr>
+    </table>
+    <div class="jobs">
+      <span class="job">✓ @demo/shared / build</span><span class="job">✓ @demo/api / build</span><span class="job">✓ @demo/web / build</span><span class="job">✓ @demo/api / docker</span><span class="job s">— worker skipped</span>
+    </div>
+  </div>
+</main>
+<footer style="padding:0 48px 40px;font-size:17px;color:#9da7b3;font-family:Consolas,monospace"><span style="color:#e6edf3">uses: Continuous-Actions/dynamic-monorepo@v1</span> &nbsp;·&nbsp; Node · Go · Rust · Python · Java · .NET · Docker · Helm &nbsp;·&nbsp; contents: read</footer>
+</body></html>

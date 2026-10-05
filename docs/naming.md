@@ -6,7 +6,7 @@
 
 # Naming: recommendation for the Continuous-Actions affected-project planning action
 
-Research date: 2026-10-05. Org fixed: `Continuous-Actions` (exists on GitHub, 0 public repos, so no org-level collision).
+Research date: 2026-10-05. Org: `Continuous-Actions` (renamed from `OpenMind-SI` on 2026-10-05; GitHub redirects the old URLs).
 
 ## Recommendation
 

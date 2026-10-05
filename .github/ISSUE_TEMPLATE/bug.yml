@@ -1,0 +1,27 @@
+name: Bug report
+description: The plan selected the wrong projects, failed, or the output looks wrong.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did the action select or report, and what did you expect?
+    validations: { required: true }
+  - type: textarea
+    id: summary
+    attributes:
+      label: Job summary / log
+      description: Paste the dynamic-monorepo job summary or log (run with `verbose: true` if you can). Remove anything private.
+      render: text
+  - type: textarea
+    id: layout
+    attributes:
+      label: Repository layout
+      description: Output of `npx github:Continuous-Actions/dynamic-monorepo projects`, or a short description of your folders and marker files.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: v1.0.0 or commit SHA
