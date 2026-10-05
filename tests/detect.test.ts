@@ -261,3 +261,35 @@ describe('Go modules with several binaries', () => {
     expect(r.json('build')).toEqual(['svc']);
   });
 });
+
+describe('Maven and Gradle edges', () => {
+  it('links Maven modules to their parent and sibling artifacts; aggregator poms build nothing', () => {
+    const repo = new Repo();
+    const pom = (a: string, extra = '') => `<project><parent><groupId>g</groupId><artifactId>parent</artifactId></parent><artifactId>${a}</artifactId>${extra}</project>`;
+    const before = repo.commit('init', {
+      'pom.xml': '<project><groupId>g</groupId><artifactId>parent</artifactId><packaging>pom</packaging><modules><module>core</module><module>api</module><module>web</module></modules><dependencyManagement><dependencies><dependency><artifactId>web</artifactId></dependency></dependencies></dependencyManagement></project>',
+      'core/pom.xml': pom('core'),
+      'api/pom.xml': pom('api', '<dependencies><dependency><groupId>g</groupId><artifactId>core</artifactId></dependency></dependencies>'),
+      'web/pom.xml': pom('web'),
+    });
+    const after = repo.commit('core', { 'core/src/A.java': 'class A {}' });
+    const r = runAction(repo, { event: 'push', payload: { ref: 'refs/heads/main', before, after, repository: { default_branch: 'main' } } });
+    expect(r.json('affected')).toEqual(['core', 'api']);
+    const after2 = repo.commit('parent', { 'pom.xml': '<project><groupId>g</groupId><artifactId>parent</artifactId><packaging>pom</packaging><version>2</version></project>' });
+    const r2 = runAction(repo, { event: 'push', payload: { ref: 'refs/heads/main', before: after, after: after2, repository: { default_branch: 'main' } } });
+    expect(r2.json('build').sort()).toEqual(['api', 'core', 'web']);
+    expect(r2.json('build')).not.toContain('root');
+  });
+
+  it('links Gradle projects via project(":path")', () => {
+    const repo = new Repo();
+    const before = repo.commit('init', {
+      'settings.gradle': "include 'libs:core', 'app'",
+      'libs/core/build.gradle': 'plugins { id "java" }',
+      'app/build.gradle': "dependencies { implementation project(':libs:core') }",
+    });
+    const after = repo.commit('core', { 'libs/core/src/A.java': 'class A {}' });
+    const r = runAction(repo, { event: 'push', payload: { ref: 'refs/heads/main', before, after, repository: { default_branch: 'main' } } });
+    expect(r.json('affected')).toEqual(['libs/core', 'app']);
+  });
+});

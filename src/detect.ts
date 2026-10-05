@@ -113,7 +113,7 @@ export function detect(reader: RepoReader, validName: (name: string) => boolean,
   }
 
   // 2. Read the manifests that carry names or dependencies (one git process).
-  const manifestNames = new Set(['package.json', 'Cargo.toml', 'go.mod']);
+  const manifestNames = new Set(['package.json', 'Cargo.toml', 'go.mod', 'pom.xml', 'build.gradle', 'build.gradle.kts']);
   const toRead = [...dirs.values()].flatMap((d) => d.markers).filter((f) => manifestNames.has(f.slice(f.lastIndexOf('/') + 1)) || /\.(cs|fs|vb)proj$/.test(f));
   const fileSet = new Set(files);
   if (!dirs.has('.') && fileSet.has('Cargo.toml')) toRead.push('Cargo.toml');
@@ -197,6 +197,16 @@ export function detect(reader: RepoReader, validName: (name: string) => boolean,
       if (mod) goByModule.set(mod, dir);
     }
   }
+  // Maven: artifactId -> directory, and which poms only aggregate modules (packaging "pom").
+  const poms = new Map<string, Pom>();
+  const mavenByArtifact = new Map<string, string>();
+  for (const [dir, d] of dirs) {
+    if (!d.kinds.has('maven')) continue;
+    const pom = parsePom(at(dir, 'pom.xml'));
+    if (!pom) continue;
+    poms.set(dir, pom);
+    if (pom.artifactId) mavenByArtifact.set(pom.artifactId, dir);
+  }
   // A package name used by two folders can't be resolved to one project: drop those edges and say so.
   for (const n of [...ambiguous].sort()) {
     nodeByName.delete(n);
@@ -235,6 +245,19 @@ export function detect(reader: RepoReader, validName: (name: string) => boolean,
       }
     }
     for (const imp of goPkgs.get(dir)?.imports ?? []) link(dir, imp);
+    const pom = poms.get(dir);
+    if (pom) {
+      // A module depends on its parent pom (shared versions and plugins) and on sibling artifacts it uses.
+      if (pom.parent) link(dir, mavenByArtifact.get(pom.parent));
+      for (const dep of pom.dependencies) link(dir, mavenByArtifact.get(dep));
+    }
+    if (d.kinds.has('gradle')) {
+      const script = at(dir, 'build.gradle') ?? at(dir, 'build.gradle.kts') ?? '';
+      // project(':libs:core') -> libs/core (Gradle's default project directory layout).
+      for (const m of stripGoComments(script).matchAll(/project\s*\(\s*(?:path\s*[:=]\s*)?["']:([^"']+)["']/g)) {
+        link(dir, m[1]!.replace(/:/g, '/'));
+      }
+    }
     for (const proj of d.markers.filter((m) => /\.(cs|fs|vb)proj$/.test(m))) {
       for (const m of (text.get(proj) ?? '').matchAll(/<ProjectReference\s+Include\s*=\s*"([^"]+)"/g)) {
         const target = resolveRel(dir, m[1]!.replace(/\\/g, '/'));
@@ -253,7 +276,9 @@ export function detect(reader: RepoReader, validName: (name: string) => boolean,
     const container = d.kinds.has('docker') || d.kinds.has('helm');
     const goPkg = goPkgs.get(dir);
     // Go library packages are tested, not built; binaries (package main) are built and tested.
-    const base: Target[] = goPkg && !goPkg.main && d.kinds.size === 1 ? ['test'] : ['build', 'test'];
+    // A Maven pom with packaging "pom" only aggregates modules: it has nothing of its own to build.
+    const aggregator = poms.get(dir)?.packaging === 'pom' && d.kinds.size === 1;
+    const base: Target[] = aggregator ? [] : goPkg && !goPkg.main && d.kinds.size === 1 ? ['test'] : ['build', 'test'];
     const targets: Target[] = [...base, ...(container ? (['deploy'] as const) : []), ...(d.kinds.has('docker') ? (['docker'] as const) : [])];
     const dockerfiles = d.markers.filter((m) => markerKind(m.slice(m.lastIndexOf('/') + 1)) === 'docker').sort();
     const prefer = (base: string) => dockerfiles.find((f) => f === (dir === '.' ? base : `${dir}/${base}`));
@@ -367,4 +392,26 @@ function goImports(code: string): string[] {
   }
   for (const m of code.matchAll(/^\s*import\s+(?:[\w.]+\s+)?"([^"]+)"/gm)) out.push(m[1]!);
   return out;
+}
+
+type Pom = { artifactId?: string; parent?: string; packaging?: string; dependencies: string[] };
+
+/** Reads the parts of a pom.xml that matter for the project graph (regex-based; no XML entities, no execution). */
+function parsePom(xml: string | undefined): Pom | undefined {
+  if (xml === undefined) return undefined;
+  const strip = (s: string, tag: string) => s.replace(new RegExp(String.raw`<${tag}\b[\s\S]*?</${tag}>`, 'g'), '');
+  const text = xml.replace(/<!--[\s\S]*?-->/g, '');
+  const first = (s: string, tag: string) => new RegExp(String.raw`<${tag}>\s*([^<\s]+)\s*</${tag}>`).exec(s)?.[1];
+  const parentBlock = /<parent\b[\s\S]*?<\/parent>/.exec(text)?.[0];
+  let own = strip(text, 'parent');
+  own = strip(strip(strip(strip(own, 'dependencyManagement'), 'build'), 'profiles'), 'reporting');
+  const depsBlocks = [...own.matchAll(/<dependencies\b[\s\S]*?<\/dependencies>/g)].map((m) => m[0]);
+  const dependencies = depsBlocks.flatMap((b) => [...b.matchAll(/<artifactId>\s*([^<\s]+)\s*<\/artifactId>/g)].map((m) => m[1]!));
+  const head = strip(own, 'dependencies');
+  return {
+    artifactId: first(head, 'artifactId'),
+    parent: parentBlock ? first(parentBlock, 'artifactId') : undefined,
+    packaging: first(head, 'packaging'),
+    dependencies,
+  };
 }
