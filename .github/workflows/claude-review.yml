@@ -12,7 +12,7 @@ jobs:
   review:
     if: >-
       (github.event.action != 'review_requested' && !github.event.pull_request.draft) ||
-      (github.event.action == 'review_requested' && github.event.requested_team.slug == 'claude')
+      (github.event.action == 'review_requested' && github.event.requested_team.slug == 'claude-review')
     uses: OpenMind-SI/.github/.github/workflows/claude-review.yml@main
     secrets: inherit
     permissions:
