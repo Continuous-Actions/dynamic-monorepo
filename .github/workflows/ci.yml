@@ -26,13 +26,12 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-          cache: npm
-      - run: npm ci
-      - run: npx tsc -p .
+      - run: corepack enable && yarn install --immutable
+      - run: yarn typecheck
       - name: Rebuild dist and verify it is committed
         run: |
           node scripts/build.mjs
-          git diff --exit-code -- dist/ || { echo "::error::dist/ is stale. Run 'npm run build' and commit."; exit 1; }
-      - run: npx vitest run
+          git diff --exit-code -- dist/ || { echo "::error::dist/ is stale. Run 'yarn build' and commit."; exit 1; }
+      - run: yarn test
       - name: Benchmarks
         run: node bench/bench.ts | tee -a "$GITHUB_STEP_SUMMARY"

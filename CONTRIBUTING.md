@@ -5,15 +5,18 @@ Before you propose a new option or feature, check that it solves a real problem 
 
 ## Development
 
-You need Node.js 24 or later and git.
+You need Node.js 24 or later and git. The project uses **Yarn 4**. The version is pinned with `packageManager` in `package.json`, and `corepack enable` provides it.
 
 ```bash
-npm ci
-npm run typecheck   # TypeScript 7
-npm test            # Vitest: end-to-end tests drive dist/index.js against real temporary git repos
-npm run build       # bundles src/ into dist/index.js (commit the result)
-npm run bench       # synthetic benchmarks
+corepack enable
+yarn install
+yarn typecheck   # TypeScript 7
+yarn test        # Vitest: end-to-end tests drive dist/index.js against real temporary git repos
+yarn build       # bundles src/ into dist/index.js (commit the result)
+yarn bench       # synthetic benchmarks
 ```
+
+Prefer npm? `npm install` and `npm run <script>` work too. `yarn.lock` is the canonical lockfile, so don't commit a `package-lock.json`.
 
 `dist/index.js` is committed because GitHub runs actions straight from the repository.
 CI fails if `dist/` doesn't match a fresh build.
@@ -28,6 +31,6 @@ CI fails if `dist/` doesn't match a fresh build.
 
 ## Releasing
 
-1. Update `CHANGELOG.md` and run `npm run build`.
+1. Update `CHANGELOG.md` and run `yarn build`.
 2. Tag `vX.Y.Z`, create a GitHub release, and publish it to the Marketplace.
 3. Move the major tag: `git tag -f v1 && git push -f origin v1`.
