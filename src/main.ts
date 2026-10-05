@@ -21,7 +21,7 @@ export function run(): number {
     const maxJobs = Number(getInput('max-jobs', String(MATRIX_LIMIT)));
     if (!Number.isInteger(maxJobs) || maxJobs < 1 || maxJobs > MATRIX_LIMIT) throw new Error(`input "max-jobs" must be an integer from 1 to ${MATRIX_LIMIT}`);
 
-    const { plan, range, warnings } = execute({
+    const { plan, range, warnings, notes } = execute({
       cwd,
       config: getInput('config', CONFIG_FILE),
       fetch: getBoolean('fetch', true),
@@ -42,9 +42,9 @@ export function run(): number {
         info(`"${t}" has ${plan.targets[t].length} projects (more than ${maxJobs}); use the "${t}_batches" output to stay within one matrix.`);
       }
     }
-    info(textReport(plan, range, verbose));
+    info(textReport(plan, range, verbose, notes));
     if (verbose) group('Plan JSON', () => info(JSON.stringify(serialize(plan), null, 2)));
-    if (getBoolean('summary', true)) appendSummary(markdownReport(plan, range));
+    if (getBoolean('summary', true)) appendSummary(markdownReport(plan, range, notes));
     info(`Completed in ${Math.round(performance.now() - t0)} ms`);
     return 0;
   } catch (err) {
@@ -82,6 +82,7 @@ function writeOutputs(p: Plan, base: string, head: string, maxJobs: number): voi
   setOutput('renamed', json(p.renamed));
   setOutput('skipped', json(p.skipped));
   setOutput('paths', json(p.paths));
+  setOutput('dockerfiles', json(p.dockerfiles));
   setOutput('has_changes', String(p.affected.length > 0));
   setOutput('all', String(p.all));
   setOutput('reason', p.allReason ?? '');

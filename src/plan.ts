@@ -25,6 +25,8 @@ export type Plan = {
   renamed: { from: string; to: string }[];
   skipped: string[];
   paths: Record<string, string>;
+  /** Dockerfile of each project in the docker list, when known. */
+  dockerfiles: Record<string, string>;
   reasons: Map<string, Reason>;
   files: { total: number; ignored: number; unowned: string[]; global: string[] };
 };
@@ -200,6 +202,11 @@ export function plan(input: PlanInput): Plan {
   const affected = graph.sort(affectedSet);
   const paths: Record<string, string> = Object.create(null);
   for (const name of affected) paths[name] = head.projects.get(name)!.path;
+  const dockerfiles: Record<string, string> = Object.create(null);
+  for (const name of targets.docker) {
+    const f = head.projects.get(name)!.dockerfile;
+    if (f) dockerfiles[name] = f;
+  }
 
   return {
     all: allReason !== undefined,
@@ -212,6 +219,7 @@ export function plan(input: PlanInput): Plan {
     renamed: renamed.sort((a, b) => compare(a.to, b.to)),
     skipped: graph.sort([...head.projects.keys()].filter((n) => !affectedSet.has(n))),
     paths,
+    dockerfiles,
     reasons,
     files: { total, ignored, unowned: unowned.sort(compare), global: globalHits.sort(compare) },
   };

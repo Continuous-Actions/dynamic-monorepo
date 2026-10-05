@@ -6,6 +6,9 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Zero-config auto-detection: without a config file, projects are found from marker files (package.json, go.mod, Cargo.toml, *.csproj, pyproject.toml, pom.xml, build.gradle, Dockerfile, Chart.yaml) in the committed tree, with dependencies read from the manifests and root lockfiles scoped to their ecosystem. `"detect": true` combines it with a config file.
+- `docker` target and outputs (`docker`, `docker_batches`, `has_docker`) plus a `dockerfiles` map.
+- CLI `projects` command that lists every project, its folder, targets and dependencies.
 - Initial release: dependency-aware affected-project planning.
 - Event-aware git comparison (`pull_request`, `pull_request_target`, `push`, `merge_group`, and a `base` input) that works with shallow clones.
 - JSON outputs for matrices: `changed`, `affected`, `build`, `test`, `deploy`, `added`, `deleted`, `renamed`, `skipped`, `paths`, plus `has_*` flags.

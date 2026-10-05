@@ -1,66 +1,12 @@
 # dynamic-monorepo
 
-**Dependency-aware affected-project planning for monorepos, built for GitHub Actions.**
+**Build, test and deploy only the projects a change affects. No config file needed.**
 
-`dynamic-monorepo` turns a git diff into the list of projects you actually need to build, test and deploy. It maps changed files to projects, walks your declared dependency graph to find everything downstream, and outputs JSON arrays ready for `strategy.matrix`. The job summary says why each project was picked.
-
-```yaml
-- uses: OpenMind-SI/dynamic-monorepo@v1
-  id: plan
-# steps.plan.outputs.build == '["shared","api","web"]'
-```
-
-- Single bundled JavaScript file (~84 KB). Nothing to install, no `npm install`, no Docker, no downloads at runtime.
-- Works with a shallow `actions/checkout` (the default `fetch-depth: 1`). It fetches only the commits it needs, by SHA.
-- Needs only `contents: read`. It runs no commands from your repository and never uses the GitHub API.
-- Deterministic: the same inputs always give the same output, in dependency order.
-
-## Why dynamic-monorepo?
-
-Knowing **which files changed** is only half the answer. In a monorepo you also need to know **what to rebuild**: if `libs/shared` changes, every service that depends on it has to be rebuilt and retested too.
-
-`dynamic-monorepo` stores the dependency graph once and computes the reverse-transitive closure for you:
-
-```
-shared ─▶ api ─▶ portal
-```
-
-| Change in | changed | affected |
-| --- | --- | --- |
-| `libs/shared/**` | `shared` | `shared`, `api`, `portal` |
-| `services/api/**` | `api` | `api`, `portal` |
-| `apps/portal/**` | `portal` | `portal` |
-
-You declare the graph once, or let the action infer it from your workspace manifests, and every run produces build, test and deploy lists that drop straight into a matrix.
+`dynamic-monorepo` reads the git diff, finds the projects in your repository on its own (from `package.json`, `go.mod`, `Dockerfile` and similar files), follows the dependencies between them, and gives you JSON lists for a GitHub Actions matrix. Change a shared library and everything that uses it is rebuilt. Change a Dockerfile and that image is rebuilt. The job summary says why each project was picked.
 
 ## Quick start
 
-**1. Describe your projects** in `dynamic-monorepo.config.json` at the repository root:
-
-```json
-{
-  "$schema": "https://raw.githubusercontent.com/OpenMind-SI/dynamic-monorepo/v1/schema.json",
-  "projects": {
-    "shared": { "path": "libs/shared" },
-    "api":    { "path": "services/api", "dependsOn": ["shared"], "targets": ["build", "test", "deploy"] },
-    "portal": { "path": "apps/portal",  "dependsOn": ["api"],    "targets": ["build", "test", "deploy"] }
-  },
-  "global": ["package-lock.json"],
-  "ignore": ["**/*.md"]
-}
-```
-
-`global` lists files whose changes affect every project. `ignore` lists files whose changes affect nothing.
-
-**Already have a workspace?** You don't have to list anything. The action can read the graph from your manifests:
-
-```json
-{ "infer": ["node"] }
-```
-
-`node` covers npm, Yarn, pnpm, Bun and Turborepo workspaces. You can also use `go` (go.work), `cargo` (Cargo workspaces), or import an Nx graph with `{ "import": { "nx": "nx-graph.json" } }`.
-
-**2. Plan, then fan out:**
+Add this file as `.github/workflows/ci.yml` and open a pull request. That's the whole setup.
 
 ```yaml
 name: CI
@@ -77,8 +23,11 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       build: ${{ steps.plan.outputs.build }}
+      docker: ${{ steps.plan.outputs.docker }}
       paths: ${{ steps.plan.outputs.paths }}
+      dockerfiles: ${{ steps.plan.outputs.dockerfiles }}
       has_build: ${{ steps.plan.outputs.has_build }}
+      has_docker: ${{ steps.plan.outputs.has_docker }}
     steps:
       - uses: actions/checkout@v7
       - uses: OpenMind-SI/dynamic-monorepo@v1
@@ -86,7 +35,7 @@ jobs:
 
   build:
     needs: plan
-    if: needs.plan.outputs.has_build == 'true'   # an empty matrix is an error in Actions
+    if: needs.plan.outputs.has_build == 'true'   # an empty matrix would fail the job
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -94,104 +43,134 @@ jobs:
         project: ${{ fromJSON(needs.plan.outputs.build) }}
     steps:
       - uses: actions/checkout@v7
-      - run: npm run build
+      - name: Build
         working-directory: ${{ fromJSON(needs.plan.outputs.paths)[matrix.project] }}
+        run: echo "replace with your build command"
+
+  docker:
+    needs: plan
+    if: needs.plan.outputs.has_docker == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJSON(needs.plan.outputs.docker) }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build image
+        env:
+          DIR: ${{ fromJSON(needs.plan.outputs.paths)[matrix.project] }}
+          FILE: ${{ fromJSON(needs.plan.outputs.dockerfiles)[matrix.project] }}
+        run: docker build -f "$FILE" "$DIR"
 ```
 
-See [docs/examples/](docs/examples/) for a complete workflow with test and deploy fan-out and a required-check gate job.
+- The default `actions/checkout` (shallow, `fetch-depth: 1`) is enough. The action fetches only the commits it needs.
+- It needs only `contents: read`, never runs code from your repository, and doesn't call the GitHub API.
+- Add a `test` or `deploy` job the same way, using the `test`/`has_test` or `deploy`/`has_deploy` outputs.
 
-## What the output looks like
-
-Job outputs (all JSON values are compact and valid inside `fromJSON()`):
-
-```text
-changed     ["auth"]
-affected    ["auth","api","admin","portal","reporting"]
-build       ["auth","api","admin","portal","reporting"]
-test        ["auth","api","admin","portal"]
-deploy      ["api","admin","portal","reporting"]
-skipped     ["shared","worker"]
-paths       {"auth":"libs/auth","api":"services/api", ...}
-has_changes true    has_build true    has_test true    has_deploy true
-all         false   (true when a global file changed or no comparison base exists)
-```
-
-The log, and the job summary as a table, read like this:
-
-```text
-dynamic-monorepo: 5 affected / 7 projects
-Compared: 09594672b857..63ef87f87cae (pull request merge commit vs its base parent)
-Changed files: 1
-Directly affected (1):
-  auth — 1 changed file: libs/auth/src/token.ts
-Transitively affected (4):
-  api — depends on auth (auth → api)
-  admin — depends on auth (auth → admin)
-  portal — depends on auth (auth → api → portal)
-  reporting — depends on auth (auth → api → reporting)
-Skipped: 2 project(s) with no changes and no changed dependencies (set verbose: true to list)
-```
-
-The complete output reference is in [docs/outputs.md](docs/outputs.md).
-
-## How it works
-
-1. **Pick the comparison** from the event ([docs/git.md](docs/git.md)):
-   - `pull_request`: GitHub's test-merge commit is compared with its first parent, so you get exactly what the PR would change.
-   - `push`: compares `before` with `after`. A new branch is compared with the default branch.
-   - `merge_group`: compares `base_sha` with `head_sha`.
-   - Anything else: compares against the `base` input, or selects all projects.
-2. **Diff** with `git diff --name-status -z -M`, which counts both the old and the new path of a rename.
-3. **Assign files to projects** by the deepest matching `path`, then apply `include`/`exclude` globs. `global` files select every project. `ignore` files are dropped.
-4. **Compare configs.** The config at the base commit is checked against the current one to find added, deleted and renamed projects, and projects whose definition changed.
-5. **Walk the graph** in reverse, breadth-first from the changed projects. The result is sorted topologically, with ties broken by name.
-6. **Write outputs**, a job summary and a full plan JSON file.
-
-If the correct comparison can't be worked out (no base, history that can't be fetched, an unknown event), every project is selected with a warning. **The action never silently reports "nothing changed".**
-
-## Configuration
-
-| Key | Meaning |
-| --- | --- |
-| `projects.<name>.path` | Directory owned by the project (required). The deepest match wins for nested projects. `.` means the repository root. |
-| `projects.<name>.dependsOn` | Projects this one depends on. A change to any of them affects this project. |
-| `projects.<name>.targets` | Which of `build`, `test`, `deploy` lists the project appears in. Default `["build", "test"]`. The object form adds per-target `exclude` globs. |
-| `projects.<name>.include` / `exclude` | Extra globs that belong to the project, or that it should ignore. |
-| `infer` | `["node", "go", "cargo"]`: read projects and dependencies from workspace manifests. |
-| `import` | `{"nx": "nx-graph.json"}`: use the graph from `nx graph --file`. |
-| `discover` | `["packages/*"]`: every sub-directory becomes a project named after the directory. |
-| `targets` | `{"deploy": {"exclude": ["**/*.test.ts"]}}`: changes that never trigger a target, such as test-only edits not causing a redeploy. |
-| `global` | Globs whose changes select every project. |
-| `ignore` | Globs whose changes are ignored everywhere. |
-
-Globs are relative to the repository root and support `*`, `**` and `?`. Invalid JSON (including duplicate keys), cycles, unknown dependencies, unknown keys, duplicate paths and unsafe names or paths are all hard errors with clear messages. Full reference: [docs/configuration.md](docs/configuration.md).
-
-## Inputs
-
-| Input | Default | Description |
-| --- | --- | --- |
-| `config` | `dynamic-monorepo.config.json` | Config file path. |
-| `base` | — | Ref or SHA to compare against (merge-base with HEAD). Overrides event detection. |
-| `head` | `HEAD` | Revision to compare. |
-| `fetch` | `true` | Fetch missing commits by SHA in shallow clones. |
-| `summary` | `true` | Write the job summary. |
-| `verbose` | `false` | List skipped projects, unowned files, git commands and the full plan. |
-| `max-jobs` | `256` | Maximum entries in each `*_batches` output. |
-| `working-directory` | `.` | Directory of the repository to analyse. |
-
-## Preview locally (CLI)
-
-The same engine runs on your machine, so you can see what CI would run before you push:
+To see what it finds before you push, run this in your repository:
 
 ```bash
-npx github:OpenMind-SI/dynamic-monorepo --base origin/main
+npx github:OpenMind-SI/dynamic-monorepo projects            # every project, its folder, targets and dependencies
+npx github:OpenMind-SI/dynamic-monorepo --base origin/main  # what CI would run for your branch
 ```
 
-Other flags: `--json` (full plan with reasons), `--uncommitted` (include working-tree edits) and `--verbose`. Run `--help` for the full list.
+## What it detects
 
-## Very large monorepos
+A **project** is a folder that contains one of these files. A changed file belongs to the closest project folder above it.
 
-GitHub caps a matrix at 256 jobs. If a list can be longer than that, use `build_batches` (also `test_batches` and `deploy_batches`). It holds at most `max-jobs` balanced groups that together contain every project, in dependency order:
+| File | Kind | Dependencies come from |
+| --- | --- | --- |
+| `package.json` | node | `dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies` naming another detected package |
+| `go.mod` | go | `require` and `replace` lines naming another detected module |
+| `Cargo.toml` with `[package]` | cargo | `path` dependencies, and `workspace = true` dependencies with a path |
+| `*.csproj`, `*.fsproj`, `*.vbproj` | dotnet | `<ProjectReference Include="...">` |
+| `pyproject.toml`, `setup.py` | python | — |
+| `pom.xml`, `build.gradle`, `build.gradle.kts` | maven, gradle | — |
+| `Dockerfile`, `Containerfile`, `*.Dockerfile`, `Dockerfile.*` | docker | — |
+| `Chart.yaml` | helm | — |
+
+- **Names:** the package name from `package.json` or `Cargo.toml` when it is unique, otherwise the folder path (`services/api`). A project at the repository root is called `root`.
+- **Lists:** every project is in `build` and `test`. Projects with a Dockerfile or Containerfile are also in `docker` and `deploy`. Projects with a `Chart.yaml` are also in `deploy`.
+- **Lockfiles** at the root (`package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `bun.lock`, `go.work.sum`, `Cargo.lock`, `poetry.lock`, `uv.lock`, `Pipfile.lock`) select every project of their ecosystem. Changing `yarn.lock` rebuilds the node projects, not the Go ones.
+- **Not projects:** a root `package.json` that only declares `workspaces`, a `Cargo.toml` without `[package]`, and anything under `node_modules`, `vendor`, `dist`, `build`, `target`, `out`, `bin`, `obj`, `testdata`, `fixtures`, `__fixtures__`, `__tests__` or a folder starting with `.`.
+- **Only committed files count.** Untracked and ignored files are never scanned.
+- **Files outside every project**, such as `.github/` or root scripts, select nothing, and the summary lists them. The exception is a project at the root (for example a root `package.json` without `workspaces`): it owns every file that isn't inside another project.
+- **No usable comparison** (for example a manual run without a `base` input) selects every project, with a warning. The action never reports "nothing changed" just because it couldn't compare.
+
+## What you get
+
+```text
+build        ["@acme/shared","@acme/web"]
+test         ["@acme/shared","@acme/web"]
+docker       ["@acme/web"]
+deploy       ["@acme/web"]
+paths        {"@acme/shared":"packages/shared","@acme/web":"apps/web"}
+dockerfiles  {"@acme/web":"apps/web/Dockerfile"}
+has_build true   has_test true   has_docker true   has_deploy true   all false
+```
+
+Lists are in dependency order: dependencies before the projects that use them. The log and job summary explain each choice:
+
+```text
+dynamic-monorepo: 2 affected / 5 projects
+Compared: 09594672b857..63ef87f87cae (pull request merge commit vs its base parent)
+Detected 5 projects: 2 node, 2 go, 2 docker (no dynamic-monorepo.config.json, so projects come from marker files).
+yarn.lock changes select every node project (2).
+Directly affected (1):
+  @acme/shared — 1 changed file: packages/shared/index.ts
+Transitively affected (1):
+  @acme/web — depends on @acme/shared (@acme/shared → @acme/web)
+```
+
+All outputs: [docs/outputs.md](docs/outputs.md).
+
+## Customising
+
+You only need a config file to change what was detected. Create `dynamic-monorepo.config.json` at the repository root:
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/OpenMind-SI/dynamic-monorepo/v1/schema.json",
+  "detect": true,
+  "projects": {
+    "web": { "path": "apps/web", "dependsOn": ["proto"], "targets": ["build", "test", "deploy"] },
+    "proto": { "path": "proto" }
+  },
+  "global": [".github/workflows/**"],
+  "ignore": ["**/*.md"]
+}
+```
+
+- `"detect": true` keeps auto-detection on. **Once a config file exists, detection is off unless you set this.** Without it, list every project under `projects`.
+- An entry under `projects` overrides the detected project at the same path. Detected dependencies are kept and added to yours.
+- `global`: files whose changes select every project. `ignore`: files whose changes select nothing.
+- You can also read dependencies from workspace files (`"infer": ["node", "go", "cargo"]`), import an Nx graph, or turn every sub-folder into a project (`"discover": ["services/*"]`).
+
+The full reference, including per-target exclusions such as "test-only changes don't redeploy", is in [docs/configuration.md](docs/configuration.md).
+
+## Troubleshooting
+
+**The build job was skipped, or failed with "Matrix vector 'project' does not contain any values".** Nothing that job builds was affected. Keep the `if: needs.plan.outputs.has_build == 'true'` line, and read the plan job's summary to see what was compared.
+
+**A project is missing, or has an odd name.** Run `npx github:OpenMind-SI/dynamic-monorepo projects`. Check that its marker file is committed and not inside a skipped folder (see [What it detects](#what-it-detects)). To add or rename a project, use a config file with `"detect": true` and an entry under `projects`.
+
+**A change didn't select the project I expected.** The file is probably outside every project folder. Run with `verbose: true` to list such files. Add the file to that project's `include`, or to `global`.
+
+**Every project was selected.** The warning and the `reason` output say why. The usual causes:
+
+- A manual or scheduled run: there is nothing to compare with. Set the `base` input, for example `base: main`.
+- A tag push, or a push whose previous commit no longer exists (force push).
+- A file listed in `global` changed, or `global`, `ignore` or `targets` changed in the config file.
+- History couldn't be fetched: with `persist-credentials: false` on a private repository, use `fetch-depth: 0`. See [docs/git.md](docs/git.md).
+
+**Why was this project picked?** The job summary has a reason for each project. For the full detail, read the `plan_file` output, or run the CLI with `--json`.
+
+**"Unable to resolve action" or "repository not found" for `OpenMind-SI/dynamic-monorepo`.** The action's repository is private. An organization admin has to allow access from your repository: in the action repository, **Settings → Actions → General → Access**.
+
+**Making it a required check.** Skipped matrix jobs count as passed, but a workflow that never runs leaves a required check pending forever. Run the workflow on every pull request and require one gate job: see [docs/outputs.md](docs/outputs.md#patterns) and the [realistic example](docs/examples/realistic/workflow.yml).
+
+**More than 256 projects in one list.** GitHub allows 256 jobs per matrix. Use `build_batches` (and `test_batches`, `deploy_batches`, `docker_batches`): each entry is a list of projects.
 
 ```yaml
 strategy:
@@ -203,33 +182,41 @@ steps:
       BATCH: ${{ join(matrix.batch, ' ') }}
 ```
 
-## Performance
+## Inputs
 
-The planner is dominated by Node startup and `git`, not by graph work. Measured numbers are in [docs/benchmarks.md](docs/benchmarks.md):
+| Input | Default | Description |
+| --- | --- | --- |
+| `config` | `dynamic-monorepo.config.json` | Config file path. Optional: without it, projects are auto-detected. |
+| `base` | — | Ref or SHA to compare against (merge-base with HEAD). Overrides event detection. |
+| `head` | `HEAD` | Revision to compare. |
+| `fetch` | `true` | Fetch missing commits by SHA in shallow clones. |
+| `summary` | `true` | Write the job summary. |
+| `verbose` | `false` | List skipped projects, unowned files, git commands and the full plan. |
+| `max-jobs` | `256` | Maximum entries in each `*_batches` output. |
+| `working-directory` | `.` | Directory of the repository to analyse. |
 
-- 1,000 projects with 10,000 changed files plans in well under 100 ms in-process.
-- 10,000 projects with 100,000 changed files still plans in under a second.
-- End to end on a hosted `ubuntu-latest` runner, including Node startup and `git diff`: about **50 ms** for 10 projects, **105 ms** for 1,000 projects with 1,000 changed files, and **233 ms** for 5,000 projects with 10,000 changed files.
+## How it works
+
+1. **Pick the comparison** from the event: a pull request's merge commit against its base, `before..after` for a push, `base_sha..head_sha` in a merge queue, or the `base` input. Details: [docs/git.md](docs/git.md).
+2. **Diff** with `git diff --name-status -M`. A renamed file counts for both its old and new project.
+3. **Find projects** in the config file and, when detection is on, in the committed files. This is done at both commits, so new and deleted projects are reported in `added` and `deleted`.
+4. **Assign each changed file** to the deepest project folder that contains it, then apply `include`/`exclude`, `global` and `ignore`.
+5. **Walk the dependency graph** from the changed projects to everything that depends on them, and sort the result in dependency order.
+6. **Write outputs**, a job summary and a plan file with a reason for every project.
 
 ## Security
 
-The config file and git data are treated as untrusted input:
+The repository's files are untrusted input. Manifests and the config file are only read, with size limits and a strict JSON parser; nothing in them is executed. Git runs through `execFile` with argument arrays, never a shell. Project names are limited to a shell-safe character set, and file names are neutralised in logs so they can't inject workflow commands. See [SECURITY.md](SECURITY.md) and [docs/decisions.md](docs/decisions.md#security-model).
 
-- The config is parsed by a strict JSON parser that rejects duplicate keys. Manifests are only read, never executed.
-- Data is stored in `Map`s, so it can't pollute prototypes.
-- Paths are normalised, and `..` and absolute paths are rejected.
-- Project names are restricted to a shell-safe character set.
-- Git is run with `execFile` and argument arrays, never through a shell.
-- Revisions are validated before use.
-- File names are neutralised in logs so they can't inject workflow commands.
+## Performance
 
-See [SECURITY.md](SECURITY.md) and [docs/decisions.md](docs/decisions.md#security-model).
+A single bundled JavaScript file with nothing to install. Planning 1,000 projects with 1,000 changed files takes about 105 ms end to end on a hosted `ubuntu-latest` runner. Numbers: [docs/benchmarks.md](docs/benchmarks.md).
 
 ## Limitations
 
-- Inference reads manifests (package.json, go.work/go.mod, Cargo.toml) and Nx graph files. It doesn't analyse source imports.
-- A project is detected as renamed *and* moved only when git reports most of its files as renamed into the new location.
-- Dependency edges are project-level. Per-target graphs (for example, a test that depends on another project's deployment) aren't modelled yet.
+- Dependencies come from manifests, not from source imports. Python, Maven, Gradle, Docker and Helm projects get no dependency edges; add them with `dependsOn`.
+- A Dockerfile in its own sub-folder (`services/api/docker/Dockerfile`) makes that sub-folder a separate project.
+- Dependency edges are project-level, not per target.
 
 ## License
 

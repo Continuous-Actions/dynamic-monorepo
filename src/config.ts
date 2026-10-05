@@ -7,13 +7,14 @@
 
 import { parseJsonStrict } from './json.ts';
 import { compileGlob, validatePattern, type Matcher } from './glob.ts';
+import { detect, type Detection } from './detect.ts';
 import { importNx, infer, INFER_KINDS, type Inferred, type InferKind, type RepoReader } from './infer.ts';
 import { normalizeDir } from './paths.ts';
 
 export { normalizeDir } from './paths.ts';
 export type { RepoReader } from './infer.ts';
 
-export const TARGETS = ['build', 'test', 'deploy'] as const;
+export const TARGETS = ['build', 'test', 'deploy', 'docker'] as const;
 export type Target = (typeof TARGETS)[number];
 export const DEFAULT_TARGETS: readonly Target[] = ['build', 'test'];
 
@@ -36,9 +37,11 @@ export type Project = {
   targetExclude: Partial<Record<Target, Matcher[]>>;
   /** Where the project came from, for explanations. */
   source: Source;
+  /** Dockerfile found by auto-detection (repo-relative). */
+  dockerfile?: string;
 };
 
-export type Source = 'projects' | 'discover' | InferKind | 'nx';
+export type Source = 'projects' | 'discover' | InferKind | 'nx' | 'detect';
 
 export type Config = {
   projects: Map<string, Project>;
@@ -48,6 +51,8 @@ export type Config = {
   targetExclude: Record<Target, Matcher[]>;
   /** Fingerprint of settings whose change affects every project. */
   globalsKey: string;
+  /** What auto-detection found, when "detect" is on. */
+  detection?: Detection;
 };
 
 export class ConfigError extends Error {
@@ -61,7 +66,7 @@ export class ConfigError extends Error {
 
 const NAME_RE = /^[A-Za-z0-9@][A-Za-z0-9._@/-]{0,213}$/;
 const RESERVED = new Set(['__proto__', 'constructor', 'prototype']);
-const TOP_KEYS = new Set(['$schema', 'version', 'projects', 'discover', 'infer', 'import', 'targets', 'global', 'ignore']);
+const TOP_KEYS = new Set(['$schema', 'version', 'projects', 'detect', 'discover', 'infer', 'import', 'targets', 'global', 'ignore']);
 const PROJECT_KEYS = new Set(['path', 'dependsOn', 'targets', 'include', 'exclude']);
 
 export function validateName(name: string): string | undefined {
@@ -131,13 +136,26 @@ export function validateConfig(doc: unknown, file: string, reader?: RepoReader):
     mergeInferred(found, projects, problems);
   }
 
+  // Auto-detected projects (marker files) come after explicit, inferred and imported ones.
+  const detectOn = doc['detect'] ?? false;
+  if (typeof detectOn !== 'boolean') problems.push('"detect" must be true or false');
+  let detection: Detection | undefined;
+  if (detectOn === true && reader) {
+    detection = detect(reader, (n) => validateName(n) === undefined, problems);
+    mergeDetected(detection, projects);
+  }
+
   const discover = stringList(doc['discover'], '"discover"', problems);
   for (const pattern of discover) {
     discoverProjects(pattern, projects, problems, reader);
   }
 
   if (projects.size === 0 && problems.length === 0) {
-    problems.push('no projects defined (add "projects", "infer", "import" or "discover")');
+    problems.push(detectOn === true
+      ? 'no projects found. Auto-detection looks for package.json, go.mod, Cargo.toml, pyproject.toml, setup.py, pom.xml, ' +
+        'build.gradle(.kts), *.csproj, Dockerfile, Containerfile and Chart.yaml in committed files (skipping node_modules, vendor, dist, build, ' +
+        'target, fixtures and dot-directories). Add one of those, or list your projects under "projects" in dynamic-monorepo.config.json'
+      : 'no projects defined (add "projects", "detect", "infer", "import" or "discover")');
   }
   if (projects.size > LIMITS.projects) problems.push(`more than ${LIMITS.projects} projects`);
 
@@ -166,7 +184,48 @@ export function validateConfig(doc: unknown, file: string, reader?: RepoReader):
   if (problems.length > 0) throw new ConfigError(file, problems);
   const pats = (ms: Matcher[]) => ms.map((m) => m.pattern);
   const globalsKey = JSON.stringify([pats(global), pats(ignore), TARGETS.map((t) => pats(targetExclude[t]))]);
-  return { projects, global, ignore, targetExclude, globalsKey };
+  return { projects, global, ignore, targetExclude, globalsKey, detection };
+}
+
+/**
+ * Adds auto-detected projects. An existing project at the same path wins (its
+ * settings are kept, detected dependencies and Dockerfile are added). A detected
+ * name already used by a project elsewhere falls back to the directory path.
+ */
+function mergeDetected(d: Detection, projects: Map<string, Project>): void {
+  const byPath = new Map([...projects.values()].map((p) => [p.path, p]));
+  const finalName = new Map<string, string>(); // detected name -> project name
+  for (const f of d.projects) {
+    const existing = byPath.get(f.path);
+    if (existing) {
+      finalName.set(f.name, existing.name);
+      existing.dockerfile ??= f.dockerfile;
+      continue;
+    }
+    let name = f.name;
+    if (projects.has(name)) name = f.path;
+    if (projects.has(name) || validateName(name) !== undefined) {
+      d.notes.push(`skipped "${f.path}": the name "${f.name}" is already used by another project`);
+      continue;
+    }
+    finalName.set(f.name, name);
+    const p: Project = {
+      name, path: f.path, dependsOn: [], targets: f.targets, include: f.include.map(compileGlob), exclude: [], targetExclude: {},
+      source: 'detect', dockerfile: f.dockerfile,
+    };
+    projects.set(name, p);
+    byPath.set(f.path, p);
+  }
+  for (const f of d.projects) {
+    const target = projects.get(finalName.get(f.name) ?? '');
+    if (!target) continue;
+    const deps = new Set(target.dependsOn);
+    for (const dep of f.dependsOn) {
+      const resolved = finalName.get(dep);
+      if (resolved && resolved !== target.name) deps.add(resolved);
+    }
+    target.dependsOn = [...deps].sort();
+  }
 }
 
 /**

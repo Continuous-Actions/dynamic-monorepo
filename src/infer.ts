@@ -9,6 +9,10 @@ export type RepoReader = {
   listDirs(dir: string): string[];
   /** File contents, or undefined if the file does not exist. */
   read(path: string): string | undefined;
+  /** Every committed file, repo-relative (used by auto-detection). */
+  listFiles(): string[];
+  /** Contents of many files at once; missing or oversized files are left out. */
+  readMany(paths: string[]): Map<string, string>;
 };
 
 export type Inferred = { name: string; path: string; dependsOn: string[]; via: string };
@@ -159,7 +163,7 @@ export function inferGo(reader: RepoReader, problems: string[]): Inferred[] {
   }));
 }
 
-const stripGoComments = (s: string) => s.replace(/\/\/[^\n]*/g, '');
+export const stripGoComments = (s: string) => s.replace(/\/\/[^\n]*/g, '');
 
 /** Cargo [workspace] members; edges from path dependencies (directly or via workspace.dependencies). Names are crate names. */
 export function inferCargo(reader: RepoReader, problems: string[]): Inferred[] {
@@ -215,7 +219,7 @@ export function inferCargo(reader: RepoReader, problems: string[]): Inferred[] {
   return [...crates].map(([name, c]) => ({ name, path: c.path, via: 'cargo', dependsOn: [...c.deps].sort() }));
 }
 
-function resolveRel(base: string, rel: string): string | undefined {
+export function resolveRel(base: string, rel: string): string | undefined {
   const parts = base === '.' ? [] : base.split('/');
   for (const seg of rel.replace(/\\/g, '/').split('/')) {
     if (seg === '' || seg === '.') continue;

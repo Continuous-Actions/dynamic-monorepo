@@ -14,6 +14,10 @@
       "propertyNames": { "pattern": "^[A-Za-z0-9@][A-Za-z0-9._@/-]{0,213}$" },
       "additionalProperties": { "$ref": "#/$defs/project" }
     },
+    "detect": {
+      "description": "Auto-detect projects from marker files (package.json, go.mod, Cargo.toml, pyproject.toml, pom.xml, build.gradle, *.csproj, Dockerfile, Chart.yaml). On by default when there is no config file; off unless set to true when there is one. Explicit projects override detected ones.",
+      "type": "boolean"
+    },
     "infer": {
       "description": "Infer projects and dependencies from ecosystem manifests: node = package.json workspaces / pnpm-workspace.yaml, go = go.work + go.mod, cargo = Cargo.toml [workspace].",
       "type": "array",
@@ -40,7 +44,8 @@
       "properties": {
         "build": { "$ref": "#/$defs/targetSettings" },
         "test": { "$ref": "#/$defs/targetSettings" },
-        "deploy": { "$ref": "#/$defs/targetSettings" }
+        "deploy": { "$ref": "#/$defs/targetSettings" },
+        "docker": { "$ref": "#/$defs/targetSettings" }
       }
     },
     "global": { "description": "Globs whose changes select every project.", "$ref": "#/$defs/globs" },
@@ -66,16 +71,17 @@
         "path": { "type": "string", "description": "Directory owned by the project; the deepest match wins. \".\" is the repository root." },
         "dependsOn": { "type": "array", "items": { "type": "string" }, "description": "Projects this project depends on." },
         "targets": {
-          "description": "Which of build/test/deploy the project appears in. Default [\"build\", \"test\"]. Use the object form for per-target excludes.",
+          "description": "Which of build/test/deploy/docker the project appears in. Default [\"build\", \"test\"]. Use the object form for per-target excludes.",
           "oneOf": [
-            { "type": "array", "items": { "enum": ["build", "test", "deploy"] }, "uniqueItems": true },
+            { "type": "array", "items": { "enum": ["build", "test", "deploy", "docker"] }, "uniqueItems": true },
             {
               "type": "object",
               "additionalProperties": false,
               "properties": {
                 "build": { "$ref": "#/$defs/targetSettings" },
                 "test": { "$ref": "#/$defs/targetSettings" },
-                "deploy": { "$ref": "#/$defs/targetSettings" }
+                "deploy": { "$ref": "#/$defs/targetSettings" },
+                "docker": { "$ref": "#/$defs/targetSettings" }
               }
             }
           ]
