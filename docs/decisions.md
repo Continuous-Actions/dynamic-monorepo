@@ -48,7 +48,7 @@ The file has a handful of top-level keys (`projects`, `infer`, `import`, `discov
 ## Git comparison strategy
 
 **Decision:** The comparison range depends on the event ([git.md](git.md)). Missing commits are fetched by SHA. If no correct comparison is possible, every project is selected.
-**Why:** The research found that a wrong base SHA and shallow clones are the main source of failures for existing tools (nx-set-shas, Turborepo, tj-actions). Two choices avoid needing `fetch-depth: 0`:
+**Why:** A wrong base SHA and shallow clones are the most common sources of incorrect change detection in CI. Two choices avoid needing `fetch-depth: 0`:
 
 - reading merge-commit parents from the raw commit object
 - using two-dot diffs for pushes
