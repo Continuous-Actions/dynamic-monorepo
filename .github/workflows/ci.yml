@@ -31,7 +31,9 @@ jobs:
       - name: Rebuild dist and verify it is committed
         run: |
           node scripts/build.mjs
-          git diff --exit-code -- dist/ || { echo "::error::dist/ is stale. Run 'yarn build' and commit."; exit 1; }
+          git diff --stat -- dist/
+          git diff --exit-code -- dist/ | cut -c1-300 | head -40 || true
+          git diff --quiet -- dist/ || { echo "::error::dist/ is stale. Run 'yarn build' and commit."; exit 1; }
       - run: yarn test
       - name: Benchmarks
         run: node bench/bench.ts | tee -a "$GITHUB_STEP_SUMMARY"
