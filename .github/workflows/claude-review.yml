@@ -1,4 +1,4 @@
-name: Claude Review
+name: CI | Review PR
 
 on:
   pull_request:
