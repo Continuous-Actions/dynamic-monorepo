@@ -22,7 +22,7 @@ jobs:
       has_build: ${{ steps.plan.outputs.has_build }}
       has_docker: ${{ steps.plan.outputs.has_docker }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: Continuous-Actions/dynamic-monorepo@v1
         id: plan
 
@@ -35,7 +35,7 @@ jobs:
       matrix:
         project: ${{ fromJSON(needs.plan.outputs.build) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build
         working-directory: ${{ fromJSON(needs.plan.outputs.paths)[matrix.project] }}
         run: echo "replace with the project's build command"
@@ -49,7 +49,7 @@ jobs:
       matrix:
         project: ${{ fromJSON(needs.plan.outputs.docker) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - env:
           DIR: ${{ fromJSON(needs.plan.outputs.paths)[matrix.project] }}
           FILE: ${{ fromJSON(needs.plan.outputs.dockerfiles)[matrix.project] }}
@@ -64,5 +64,6 @@ Notes:
 - It works with the default shallow checkout.
 - It needs only `contents: read`.
 - For `workflow_dispatch` or `schedule` runs, set the `base` input. Otherwise every project is selected.
+- If the repository already has one workflow per service limited by `on.paths`, map each `paths` entry as described in https://github.com/Continuous-Actions/dynamic-monorepo/blob/main/docs/migrating-from-path-filters.md, and don't put `on.paths` on the new workflow (a skipped workflow leaves required checks pending).
 
 Full docs: https://github.com/Continuous-Actions/dynamic-monorepo

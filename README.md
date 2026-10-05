@@ -212,6 +212,8 @@ A prompt to try: *"Set up GitHub Actions for this monorepo so that only changed 
 
 **Can I use it with Nx, Turborepo, pnpm, Go workspaces or Cargo workspaces?** Yes. Detection works on any of them as-is; a config file can also read an Nx graph or workspace manifests directly. See [docs/configuration.md](docs/configuration.md).
 
+**I already have one workflow per service with `on.paths`. How do I switch?**  Follow [docs/migrating-from-path-filters.md](docs/migrating-from-path-filters.md): preview the detected projects, map each `paths` entry, and replace the per-service workflows with one workflow and one required check.
+
 **What if it picks too much or too little?** Every decision is explained in the job summary. Add a config file to override names, dependencies, targets or global files; nothing else changes.
 
 ## Security
