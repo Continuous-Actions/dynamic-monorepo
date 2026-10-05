@@ -246,7 +246,14 @@ export function detect(reader: RepoReader, validName: (name: string) => boolean,
         const deps = pkg?.[field];
         // Only workspace members resolve sibling packages locally; a package outside the
         // workspace globs (e.g. examples/*) installs the published version from the registry.
-        if (deps && typeof deps === 'object' && !Array.isArray(deps) && isWorkspaceMember(dir)) for (const k of Object.keys(deps)) link(dir, nodeByName.get(k));
+        if (!deps || typeof deps !== 'object' || Array.isArray(deps)) continue;
+        for (const [k, spec] of Object.entries<unknown>(deps)) {
+          // Explicit local protocols always point at a local package.
+          const local = typeof spec === 'string' && /^(workspace|file|link|portal):/.test(spec);
+          // Without a workspace declaration, npm/Yarn/pnpm install plain version ranges from
+          // the registry, so only explicit local protocols create edges.
+          if (local || (memberTests.length > 0 && isWorkspaceMember(dir))) link(dir, nodeByName.get(k));
+        }
       }
     }
     if (d.kinds.has('go')) {
@@ -296,7 +303,13 @@ export function detect(reader: RepoReader, validName: (name: string) => boolean,
     if (pom) {
       // A module depends on its parent pom (shared versions and plugins) and on sibling artifacts it uses.
       if (pom.parent) link(dir, mavenByArtifact.get(pom.parent));
-      for (const dep of pom.dependencies) link(dir, mavenByArtifact.get(dep));
+      for (const dep of pom.dependencies) {
+        // A pinned version that differs from the local module's means the published artifact.
+        const target = mavenByArtifact.get(dep.artifactId);
+        const local = target ? poms.get(target)?.version : undefined;
+        if (dep.version && !dep.version.includes('${') && local && dep.version !== local) continue;
+        link(dir, target);
+      }
     }
     if (d.kinds.has('gradle')) {
       const script = at(dir, 'build.gradle') ?? at(dir, 'build.gradle.kts') ?? '';
@@ -444,7 +457,7 @@ function goImports(code: string): string[] {
   return out;
 }
 
-type Pom = { artifactId?: string; parent?: string; packaging?: string; dependencies: string[] };
+type Pom = { artifactId?: string; version?: string; parent?: string; packaging?: string; dependencies: { artifactId: string; version?: string }[] };
 
 /** Reads the parts of a pom.xml that matter for the project graph (regex-based; no XML entities, no execution). */
 function parsePom(xml: string | undefined): Pom | undefined {
@@ -456,12 +469,16 @@ function parsePom(xml: string | undefined): Pom | undefined {
   let own = strip(text, 'parent');
   own = strip(strip(strip(strip(own, 'dependencyManagement'), 'build'), 'profiles'), 'reporting');
   const depsBlocks = [...own.matchAll(/<dependencies\b[\s\S]*?<\/dependencies>/g)].map((m) => m[0]);
-  const dependencies = depsBlocks.flatMap((b) => [...b.matchAll(/<artifactId>\s*([^<\s]+)\s*<\/artifactId>/g)].map((m) => m[1]!));
+  const dependencies = depsBlocks.flatMap((b) => [...b.matchAll(/<dependency\b[\s\S]*?<\/dependency>/g)].map((m) => ({
+    artifactId: first(m[0], 'artifactId') ?? '',
+    version: first(m[0], 'version'),
+  }))).filter((d) => d.artifactId !== '');
   const head = strip(own, 'dependencies');
   return {
     artifactId: first(head, 'artifactId'),
     parent: parentBlock ? first(parentBlock, 'artifactId') : undefined,
     packaging: first(head, 'packaging'),
+    version: first(head, 'version') ?? (parentBlock ? first(parentBlock, 'version') : undefined),
     dependencies,
   };
 }

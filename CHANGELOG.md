@@ -3,6 +3,13 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses semantic versioning.
 
+## [1.3.2] - 2026-10-06
+
+### Fixed
+- Node: without a workspace declaration, only `workspace:`/`file:`/`link:`/`portal:` dependencies link local packages (plain version ranges come from the registry).
+- Maven: a dependency pinned to a different version than the local module is treated as the published artifact, not a local edge.
+- Audit: only filters that watch a whole project folder (`dir`, `dir/`, `dir/**`) make a workflow "about" that project; file-scoped filters are treated as deliberately narrow.
+
 ## [1.3.1] - 2026-10-06
 
 ### Fixed

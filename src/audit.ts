@@ -67,7 +67,9 @@ export function auditWorkflows(config: Config, reader: RepoReader): AuditFinding
         tests.some((t) => probes(dir).some((p) => t(p))) || include.some((p) => p.startsWith(`${dir}/`));
       if (include.some((p) => p === '**' || p === '**/*')) continue;
       // Projects the filter is specifically about: a pattern rooted inside the project directory.
-      const listed = projects.filter((pr) => include.some((p) => p === pr.path || p.startsWith(`${pr.path}/`)));
+      // A workflow is "about" a project only if it watches the whole folder (dir, dir/, dir/**,
+      // dir/**/<glob>); filters naming single files or sub-folders are deliberately narrow.
+      const listed = projects.filter((pr) => include.some((p) => p === pr.path || p === `${pr.path}/` || p.startsWith(`${pr.path}/**`)));
       if (listed.length === 0) continue;
       // One finding per missing folder, naming the listed projects that need it.
       const missing = new Map<string, Set<string>>();
