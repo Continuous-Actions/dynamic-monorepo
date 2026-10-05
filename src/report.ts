@@ -62,12 +62,12 @@ export function textReport(plan: Plan, range: Range, verbose: boolean): string {
   return lines.join('\n');
 }
 
-// File names are attacker-controlled (they come from the PR). Collapse control
-// characters first so nothing can start a new Markdown line (heading, list,
-// blockquote, table row), then entity-encode everything with inline meaning.
 /** Code span for project names (already restricted to a safe charset; this is defence in depth). */
 const code = (s: string) => `\`${s.replace(/[\x00-\x1f\x7f\u2028\u2029`|]+/g, ' ')}\``;
 
+// File names are attacker-controlled (they come from the PR). Collapse control
+// characters first so nothing can start a new Markdown line (heading, list,
+// blockquote, table row), then entity-encode everything with inline meaning.
 export const esc = (s: string) =>
   s.replace(/[\x00-\x1f\x7f\u2028\u2029]+/g, ' ').replace(/[&<>"'|`\\\[\]*_#~@:!=-]/g, (c) => `&#${c.charCodeAt(0)};`);
 
@@ -86,7 +86,7 @@ export function markdownReport(plan: Plan, range: Range): string {
     out.push('| Project | Targets | Why |', '| --- | --- | --- |');
     for (const n of cap(plan.affected, 200)) {
       const targets = (['build', 'test', 'deploy'] as const).filter((t) => plan.targets[t].includes(n)).join(', ');
-      out.push(`| \`${n}\` | ${targets || '—'} | ${esc(explain(plan.reasons.get(n)))} |`);
+      out.push(`| ${code(n)} | ${targets || '—'} | ${esc(explain(plan.reasons.get(n)))} |`);
     }
     out.push('');
   }
@@ -95,10 +95,10 @@ export function markdownReport(plan: Plan, range: Range): string {
     ['Deleted', plan.deleted],
     ['Renamed', plan.renamed.map((r) => `${r.from} → ${r.to}`)],
   ];
-  for (const [title, items] of extra) if (items.length) out.push(`**${title}:** ${cap(items).map((i) => `\`${i}\``).join(', ')}`, '');
+  for (const [title, items] of extra) if (items.length) out.push(`**${title}:** ${cap(items).map(code).join(', ')}`, '');
   if (plan.skipped.length) {
     out.push(`<details><summary>Skipped (${plan.skipped.length}) — no changed files and no dependency on a changed project</summary>`, '',
-      cap(plan.skipped, 500).map((n) => `\`${n}\``).join(', '), '', '</details>', '');
+      cap(plan.skipped, 500).map(code).join(', '), '', '</details>', '');
   }
   if (plan.files.unowned.length) {
     out.push(`<details><summary>Changed files outside any project (${plan.files.unowned.length})</summary>`, '',

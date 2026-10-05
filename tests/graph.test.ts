@@ -95,3 +95,18 @@ describe('job summary escaping', () => {
     expect(md).not.toContain('Injected heading\n');
   });
 });
+
+describe('job summary project names', () => {
+  it('added/deleted/renamed/skipped names are emitted as single-line code spans', async () => {
+    const { markdownReport } = await import('../src/report.ts');
+    const evil = 'x\n# Injected`|';
+    const plan: any = {
+      all: false, changed: [evil], affected: [evil], targets: { build: [], test: [], deploy: [] },
+      added: [evil], deleted: [evil], renamed: [{ from: evil, to: evil }], skipped: [evil], paths: {},
+      reasons: new Map(), files: { total: 0, ignored: 0, unowned: [], global: [] },
+    };
+    const md = markdownReport(plan, { kind: 'diff', base: 'a'.repeat(40), head: 'b'.repeat(40), how: 'test' });
+    expect(md.split('\n').some((l) => l.startsWith('# Injected'))).toBe(false);
+    expect(md).not.toContain('`x\n');
+  });
+});
