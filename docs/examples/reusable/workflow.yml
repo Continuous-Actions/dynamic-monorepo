@@ -1,0 +1,59 @@
+# Replace one workflow per service (each with its own `paths:` list) with a single
+# planning job that calls your EXISTING reusable workflow once per affected project.
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+      docker: ${{ steps.plan.outputs.docker }}
+      paths: ${{ steps.plan.outputs.paths }}
+      dockerfiles: ${{ steps.plan.outputs.dockerfiles }}
+      has_build: ${{ steps.plan.outputs.has_build }}
+      has_docker: ${{ steps.plan.outputs.has_docker }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Continuous-Actions/dynamic-monorepo@v1
+        id: plan
+
+  # Your existing reusable workflow, called once per affected project.
+  build-test:
+    needs: plan
+    if: needs.plan.outputs.has_build == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJSON(needs.plan.outputs.build) }}
+    uses: ./.github/workflows/reusable-build-test.yml
+    with:
+      project-name: ${{ matrix.project }}
+      project-path: ${{ fromJSON(needs.plan.outputs.paths)[matrix.project] }}
+
+  docker:
+    needs: plan
+    if: needs.plan.outputs.has_docker == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJSON(needs.plan.outputs.docker) }}
+    uses: ./.github/workflows/reusable-docker.yml
+    with:
+      context: ${{ fromJSON(needs.plan.outputs.paths)[matrix.project] }}
+      dockerfile: ${{ fromJSON(needs.plan.outputs.dockerfiles)[matrix.project] }}
+
+  # The single required status check: passes when everything needed passed or was skipped.
+  ci-ok:
+    if: always()
+    needs: [plan, build-test, docker]
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          [[ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" == "false" ]]

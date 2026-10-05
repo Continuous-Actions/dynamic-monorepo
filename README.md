@@ -80,6 +80,8 @@ jobs:
 - It needs only `contents: read`, never runs code from your repository, and doesn't call the GitHub API. See [Security](#security).
 - Add a `test` or `deploy` job the same way, using the `test`/`has_test` or `deploy`/`has_deploy` outputs.
 
+**Already have one workflow per service?** Keep your reusable workflow and call it once per affected project: [docs/examples/reusable](docs/examples/reusable/workflow.yml).
+
 To see what it finds before you push, run this in your repository:
 
 ```bash
