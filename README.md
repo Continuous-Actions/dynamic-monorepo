@@ -192,6 +192,16 @@ steps:
       BATCH: ${{ join(matrix.batch, ' ') }}
 ```
 
+## For AI agents
+
+If you set up CI with an AI coding agent, this repository has machine-readable guidance for it:
+
+- [`llms.txt`](llms.txt): what the action does, when to use it, the canonical workflow and every output.
+- An [Agent Skill](skills/dynamic-monorepo/SKILL.md) (`SKILL.md`) that skill-aware agents, including Claude Code, can install to set up selective monorepo CI.
+- A [JSON Schema](schema.json) for the optional config, and `--json` output from the CLI to check the plan.
+
+A prompt to try: *"Set up GitHub Actions for this monorepo so that only changed projects and their dependents are built, using Continuous-Actions/dynamic-monorepo."*
+
 ## FAQ
 
 **Does it need a token or secrets?** No. It reads the checked-out repository and runs `git`; the default `contents: read` permission is enough.

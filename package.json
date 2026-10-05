@@ -30,6 +30,20 @@
   "files": [
     "dist",
     "action.yml",
-    "schema.json"
+    "schema.json",
+    "llms.txt",
+    "skills"
+  ],
+  "keywords": [
+    "github-action",
+    "monorepo",
+    "ci",
+    "matrix",
+    "affected",
+    "change-detection",
+    "dependency-graph",
+    "docker",
+    "polyglot",
+    "agent-skill"
   ]
 }
