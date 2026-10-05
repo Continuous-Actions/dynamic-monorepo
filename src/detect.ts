@@ -113,7 +113,7 @@ export function detect(reader: RepoReader, validName: (name: string) => boolean,
   }
 
   // 2. Read the manifests that carry names or dependencies (one git process).
-  const manifestNames = new Set(['package.json', 'Cargo.toml', 'go.mod', 'pom.xml', 'build.gradle', 'build.gradle.kts']);
+  const manifestNames = new Set(['package.json', 'Cargo.toml', 'go.mod', 'pom.xml', 'build.gradle', 'build.gradle.kts', 'pyproject.toml']);
   const toRead = [...dirs.values()].flatMap((d) => d.markers).filter((f) => manifestNames.has(f.slice(f.lastIndexOf('/') + 1)) || /\.(cs|fs|vb)proj$/.test(f));
   const fileSet = new Set(files);
   if (!dirs.has('.') && fileSet.has('Cargo.toml')) toRead.push('Cargo.toml');
@@ -231,6 +231,26 @@ export function detect(reader: RepoReader, validName: (name: string) => boolean,
           const local = /=>\s*(\.{1,2}\/\S*)/.exec(line)?.[1];
           if (local) link(dir, resolveRel(dir, local));
         }
+      }
+    }
+    if (d.kinds.has('python')) {
+      // Local path dependencies: uv `[tool.uv.sources] x = { path = "../x" }`, Poetry
+      // `x = { path = "../x" }` (main and group dependencies), PDM/Hatch `x @ file:///${PROJECT_ROOT}/../x`.
+      const py = toml(at(dir, 'pyproject.toml'));
+      const tables: any[] = [py?.tool?.uv?.sources, py?.tool?.poetry?.dependencies, py?.tool?.poetry?.['dev-dependencies']];
+      for (const g of Object.values<any>(py?.tool?.poetry?.group ?? {})) tables.push(g?.dependencies);
+      for (const t of tables) {
+        if (!t || typeof t !== 'object') continue;
+        for (const spec of Object.values<any>(t)) {
+          const entries = Array.isArray(spec) ? spec : [spec];
+          for (const e of entries) if (typeof e?.path === 'string') link(dir, resolveRel(dir, e.path));
+        }
+      }
+      const reqs = [...(Array.isArray(py?.project?.dependencies) ? py.project.dependencies : []),
+        ...Object.values<any>(py?.project?.['optional-dependencies'] ?? {}).flat()];
+      for (const r of reqs) {
+        const m = typeof r === 'string' ? /@\s*file:(?:\/\/)?(?:\$\{PROJECT_ROOT\}\/)?(\S+)/.exec(r) : null;
+        if (m) link(dir, resolveRel(dir, m[1]!.replace(/^\/+/, '')));
       }
     }
     const crate = cargoManifests.get(dir);

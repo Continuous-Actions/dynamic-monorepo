@@ -277,6 +277,21 @@ describe('Go modules with several binaries', () => {
   });
 });
 
+describe('Python path dependencies', () => {
+  it('links uv sources and Poetry path dependencies', () => {
+    const repo = new Repo();
+    const before = repo.commit('init', {
+      'packages/devutils/pyproject.toml': '[project]\nname = "devutils"\n',
+      'packages/core/pyproject.toml': '[project]\nname = "core"\n\n[tool.uv.sources]\ndevutils = { path = "../devutils/", editable = true }\n',
+      'packages/web/pyproject.toml': '[tool.poetry]\nname = "web"\n\n[tool.poetry.group.dev.dependencies]\ncore = { path = "../core", develop = true }\n',
+      'packages/other/pyproject.toml': '[project]\nname = "other"\n',
+    });
+    const after = repo.commit('devutils', { 'packages/devutils/x.py': 'x = 1\n' });
+    const r = runAction(repo, { event: 'push', payload: { ref: 'refs/heads/main', before, after, repository: { default_branch: 'main' } } });
+    expect(r.json('affected')).toEqual(['packages/devutils', 'packages/core', 'packages/web']);
+  });
+});
+
 describe('Maven and Gradle edges', () => {
   it('links Maven modules to their parent and sibling artifacts; aggregator poms build nothing', () => {
     const repo = new Repo();

@@ -123,11 +123,11 @@ A **project** is a folder that contains one of these files. A changed file belon
 | File | Kind | Dependencies come from |
 | --- | --- | --- |
 | `package.json` | node | `dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies` naming another detected package |
-| `go.mod` | go | `require` and `replace` lines naming another detected module |
+| `go.mod` | go | `require` and `replace` lines naming another detected module. A module with several `package main` folders is split into one project per package, linked by its own imports |
 | `Cargo.toml` with `[package]` | cargo | `path` dependencies, and `workspace = true` dependencies with a path |
 | `*.csproj`, `*.fsproj`, `*.vbproj` | dotnet | `<ProjectReference Include="...">` |
-| `pyproject.toml`, `setup.py` | python | — |
-| `pom.xml`, `build.gradle`, `build.gradle.kts` | maven, gradle | — |
+| `pyproject.toml`, `setup.py` | python | local path dependencies: `[tool.uv.sources]`, Poetry `path =` dependencies, and `@ file:` requirements |
+| `pom.xml`, `build.gradle`, `build.gradle.kts` | maven, gradle | Maven `<parent>` and sibling `<dependency>` artifacts, Gradle `project(':a:b')`. Aggregator poms build nothing |
 | `Dockerfile`, `Containerfile`, `*.Dockerfile`, `Dockerfile.*` | docker | — |
 | `Chart.yaml` | helm | — |
 
@@ -288,7 +288,7 @@ A single bundled JavaScript file with nothing to install. Planning 1,000 project
 
 ## Limitations
 
-- Dependencies come from manifests, not from source imports. Python, Maven, Gradle, Docker and Helm projects get no dependency edges; add them with `dependsOn`.
+- Dependencies come from manifests, not from source imports. Docker and Helm projects get no dependency edges; add them with `dependsOn`.
 - A Dockerfile in its own sub-folder (`services/api/docker/Dockerfile`) makes that sub-folder a separate project.
 - Dependency edges are project-level, not per target.
 

@@ -3,6 +3,14 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses semantic versioning.
 
+## [1.3.0] - 2026-10-06
+
+### Added
+- Python: dependency edges from local path dependencies (`[tool.uv.sources]`, Poetry `path =`, `@ file:` requirements).
+
+### Fixed
+- Path-filter audit: wildcard roots (`crates/*/src/**`) and filters rooted inside a package count as watching it.
+
 ## [1.2.0] - 2026-10-05
 
 ### Added
