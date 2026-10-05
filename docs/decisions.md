@@ -13,7 +13,7 @@ These are short records of *why* the action works the way it does. Research note
 
 ## Runtime and language
 
-**Decision:** TypeScript, bundled with esbuild into one ESM file, `dist/index.js` (≈71 KB), running on `node24`. The only runtime dependency is `js-yaml`, and it is bundled. There is no `@actions/core`: the runner protocol takes about 60 lines in `src/actions.ts`.
+**Decision:** TypeScript 7, bundled with esbuild into one ESM file, `dist/index.js` (≈84 KB), running on `node24`. The CLI is a separate bundle, `dist/cli.js`. The only runtime dependency is `js-yaml`, used to read `pnpm-workspace.yaml`, and it is bundled. Development uses Yarn 4, and the npm scripts keep working. There is no `@actions/core`: the runner protocol takes about 60 lines in `src/actions.ts`.
 **Why:**
 
 - **Measured:** Node startup is about 40–75 ms. The planning work for 1,000 projects and 10,000 changed files takes about 18 ms in-process ([benchmarks.md](benchmarks.md)). The rest of the wall time is git process spawns.
@@ -26,9 +26,12 @@ These are short records of *why* the action works the way it does. Research note
 
 ## Configuration design
 
-**Decision:** One YAML file with five top-level keys (`version`, `projects`, `discover`, `global`, `ignore`) and five project keys (`path`, `dependsOn`, `targets`, `include`, `exclude`). The naming follows Nx and Turborepo conventions (`dependsOn`, `targets`). Globs are repo-root anchored and limited to `*`, `**` and `?`. Unknown keys are errors.
+**Decision:** One JSON file, `dynamic-monorepo.config.json`, at the repository root, with a published JSON Schema. The maintainer chose this over YAML. It sits alongside `turbo.json`, `nx.json` and `tsconfig.json`, editors autocomplete it from the schema, and a small strict parser rejects duplicate keys, which `JSON.parse` silently accepts.
+
+The file has a handful of top-level keys (`projects`, `infer`, `import`, `discover`, `targets`, `global`, `ignore`) and five project keys (`path`, `dependsOn`, `targets`, `include`, `exclude`). The naming follows Nx and Turborepo conventions. Globs are repo-root anchored and limited to `*`, `**` and `?`. Unknown keys are errors.
 **Why:** The config has to be obvious to read in review and quick to debug. A strict schema catches typos like `dependOn`, which would otherwise quietly turn into "no dependency". Anything beyond simple glob syntax is rejected rather than half-supported.
-**Not done (yet):** dependency inference from `package.json` or `go.mod`, named inputs, per-target dependency graphs.
+**Inference over declaration:** `infer` reads npm/Yarn/pnpm/Bun workspaces, go.work and Cargo workspaces, and `import` reads an Nx graph file. Manifests are only read, never executed, and explicit entries override them. Per-target `exclude` gives test-impact and deploy-impact analysis without a second graph.
+**Not done (yet):** source-level import analysis, per-target dependency graphs.
 
 ## Dependency graph
 
@@ -68,7 +71,7 @@ Selecting all projects costs minutes; under-selecting costs correctness.
 ## Security model
 
 - **Untrusted input:** the config file, the git history and file names.
-- **YAML:** core schema only, so there are no custom tags or merge keys. The config is limited to 1 MiB and 50,000 projects. Parsed data is validated into `Map`s, so there is no prototype pollution.
+- **Config parsing:** a strict JSON parser that rejects duplicate keys and builds prototype-less objects. The config is limited to 1 MiB and 50,000 projects. Parsed data is validated into `Map`s, so there is no prototype pollution. Manifests read during inference are also size-limited, parsed without executing anything, and their paths are normalised.
 - **Paths:** normalised. `..`, absolute paths, drive letters, backslashes and `.git` are rejected.
 - **Names:** restricted to `[A-Za-z0-9._@/-]`, with no leading `-`. `__proto__` and similar names are reserved.
 - **Git:** always run with `execFile` and argument arrays, never through a shell. `GIT_TERMINAL_PROMPT=0`. User revisions are validated against a strict ref/SHA pattern and passed after `--end-of-options`. The diff uses `--no-ext-diff --no-textconv`, so repository-configured diff drivers never run.

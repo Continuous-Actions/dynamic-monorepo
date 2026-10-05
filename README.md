@@ -10,7 +10,7 @@
 # steps.plan.outputs.build == '["shared","api","web"]'
 ```
 
-- Single bundled JavaScript file (~71 KB). Nothing to install, no `npm install`, no Docker, no downloads at runtime.
+- Single bundled JavaScript file (~84 KB). Nothing to install, no `npm install`, no Docker, no downloads at runtime.
 - Works with a shallow `actions/checkout` (the default `fetch-depth: 1`). It fetches only the commits it needs, by SHA.
 - Needs only `contents: read`. It runs no commands from your repository and never uses the GitHub API.
 - Deterministic: the same inputs always give the same output, in dependency order.
@@ -35,26 +35,30 @@ Nx, Turborepo, Bazel, Pants and moon do this too, but only inside their own tool
 
 ## Quick start
 
-**1. Describe your projects** in `.github/dynamic-monorepos.yml`:
+**1. Describe your projects** in `dynamic-monorepo.config.json` at the repository root:
 
-```yaml
-projects:
-  shared:
-    path: libs/shared
-  api:
-    path: services/api
-    dependsOn: [shared]
-    targets: [build, test, deploy]
-  portal:
-    path: apps/portal
-    dependsOn: [api]
-    targets: [build, test, deploy]
-
-global:            # changes here affect every project
-  - package-lock.json
-ignore:            # changes here affect nothing
-  - "**/*.md"
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/OpenMind-SI/dynamic-monorepos/v1/schema.json",
+  "projects": {
+    "shared": { "path": "libs/shared" },
+    "api":    { "path": "services/api", "dependsOn": ["shared"], "targets": ["build", "test", "deploy"] },
+    "portal": { "path": "apps/portal",  "dependsOn": ["api"],    "targets": ["build", "test", "deploy"] }
+  },
+  "global": ["package-lock.json"],
+  "ignore": ["**/*.md"]
+}
 ```
+
+`global` lists files whose changes affect every project. `ignore` lists files whose changes affect nothing.
+
+**Already have a workspace?** You don't have to list anything. The action can read the graph from your manifests:
+
+```json
+{ "infer": ["node"] }
+```
+
+`node` covers npm, Yarn, pnpm, Bun and Turborepo workspaces. You can also use `go` (go.work), `cargo` (Cargo workspaces), or import an Nx graph with `{ "import": { "nx": "nx-graph.json" } }`.
 
 **2. Plan, then fan out:**
 
@@ -151,25 +155,53 @@ If the correct comparison can't be worked out (no base, history that can't be fe
 | --- | --- |
 | `projects.<name>.path` | Directory owned by the project (required). The deepest match wins for nested projects. `.` means the repository root. |
 | `projects.<name>.dependsOn` | Projects this one depends on. A change to any of them affects this project. |
-| `projects.<name>.targets` | Which of `build`, `test`, `deploy` lists the project appears in. Default `[build, test]`. |
+| `projects.<name>.targets` | Which of `build`, `test`, `deploy` lists the project appears in. Default `["build", "test"]`. The object form adds per-target `exclude` globs. |
 | `projects.<name>.include` / `exclude` | Extra globs that belong to the project, or that it should ignore. |
+| `infer` | `["node", "go", "cargo"]`: read projects and dependencies from workspace manifests. |
+| `import` | `{"nx": "nx-graph.json"}`: use the graph from `nx graph --file`. |
 | `discover` | `["packages/*"]`: every sub-directory becomes a project named after the directory. |
+| `targets` | `{"deploy": {"exclude": ["**/*.test.ts"]}}`: changes that never trigger a target, such as test-only edits not causing a redeploy. |
 | `global` | Globs whose changes select every project. |
 | `ignore` | Globs whose changes are ignored everywhere. |
 
-Globs are relative to the repository root and support `*`, `**` and `?`. Cycles, unknown dependencies, unknown keys, duplicate paths and unsafe names or paths are all hard errors with clear messages. Full reference: [docs/configuration.md](docs/configuration.md).
+Globs are relative to the repository root and support `*`, `**` and `?`. Invalid JSON (including duplicate keys), cycles, unknown dependencies, unknown keys, duplicate paths and unsafe names or paths are all hard errors with clear messages. Full reference: [docs/configuration.md](docs/configuration.md).
 
 ## Inputs
 
 | Input | Default | Description |
 | --- | --- | --- |
-| `config` | `.github/dynamic-monorepos.yml` | Config file path. |
+| `config` | `dynamic-monorepo.config.json` | Config file path. |
 | `base` | — | Ref or SHA to compare against (merge-base with HEAD). Overrides event detection. |
 | `head` | `HEAD` | Revision to compare. |
 | `fetch` | `true` | Fetch missing commits by SHA in shallow clones. |
 | `summary` | `true` | Write the job summary. |
 | `verbose` | `false` | List skipped projects, unowned files, git commands and the full plan. |
+| `max-jobs` | `256` | Maximum entries in each `*_batches` output. |
 | `working-directory` | `.` | Directory of the repository to analyse. |
+
+## Preview locally (CLI)
+
+The same engine runs on your machine, so you can see what CI would run before you push:
+
+```bash
+npx github:OpenMind-SI/dynamic-monorepos --base origin/main
+```
+
+Other flags: `--json` (full plan with reasons), `--uncommitted` (include working-tree edits) and `--verbose`. Run `--help` for the full list.
+
+## Very large monorepos
+
+GitHub caps a matrix at 256 jobs. If a list can be longer than that, use `build_batches` (also `test_batches` and `deploy_batches`). It holds at most `max-jobs` balanced groups that together contain every project, in dependency order:
+
+```yaml
+strategy:
+  matrix:
+    batch: ${{ fromJSON(needs.plan.outputs.build_batches) }}
+steps:
+  - run: for p in $BATCH; do ./build.sh "$p"; done
+    env:
+      BATCH: ${{ join(matrix.batch, ' ') }}
+```
 
 ## Performance
 
@@ -183,7 +215,7 @@ The planner is dominated by Node startup and `git`, not by graph work. Measured 
 
 The config file and git data are treated as untrusted input:
 
-- YAML is parsed with the core schema only.
+- The config is parsed by a strict JSON parser that rejects duplicate keys. Manifests are only read, never executed.
 - Data is stored in `Map`s, so it can't pollute prototypes.
 - Paths are normalised, and `..` and absolute paths are rejected.
 - Project names are restricted to a shell-safe character set.
@@ -195,9 +227,9 @@ See [SECURITY.md](SECURITY.md) and [docs/decisions.md](docs/decisions.md#securit
 
 ## Limitations
 
-- Dependencies are declared, not inferred. `package.json`, `go.mod` and similar files are not read yet.
-- A single matrix is capped at 256 jobs by GitHub. The action warns when a list is longer.
-- A project that is renamed *and* moved in the same change shows up as deleted + added.
+- Inference reads manifests (package.json, go.work/go.mod, Cargo.toml) and Nx graph files. It doesn't analyse source imports.
+- A project is detected as renamed *and* moved only when git reports most of its files as renamed into the new location.
+- Dependency edges are project-level. Per-target graphs (for example, a test that depends on another project's deployment) aren't modelled yet.
 
 ## License
 

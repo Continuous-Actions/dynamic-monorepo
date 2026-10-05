@@ -6,6 +6,20 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { load } from 'js-yaml';
+
+export const CONFIG = 'dynamic-monorepo.config.json';
+/** Write key: tests author configs in compact YAML; they are stored as JSON at CONFIG. */
+export const CFG = '__config__';
+
+/** YAML (test shorthand) -> JSON text. Unparseable input is written verbatim so syntax-error tests still work. */
+export function toJson(yaml: string): string {
+  try {
+    return JSON.stringify(load(yaml), null, 2);
+  } catch {
+    return yaml;
+  }
+}
 
 export const DIST = resolve(import.meta.dirname, '..', 'dist', 'index.js');
 const tempDirs: string[] = [];
@@ -38,7 +52,9 @@ export class Repo {
   }
 
   write(files: Record<string, string | null>): this {
-    for (const [path, content] of Object.entries(files)) {
+    for (const [key, raw] of Object.entries(files)) {
+      const path = key === CFG ? CONFIG : key;
+      const content = key === CFG && raw !== null ? toJson(raw) : raw;
       const abs = join(this.dir, path);
       if (content === null) rmSync(abs, { recursive: true, force: true });
       else {
@@ -162,7 +178,7 @@ ignore:
 export function smallRepo(config = SMALL_CONFIG): Repo {
   const repo = new Repo();
   repo.commit('init', {
-    '.github/dynamic-monorepos.yml': config,
+    [CFG]: config,
     'package-lock.json': '{}',
     'README.md': '# root',
     'libs/shared/index.ts': 'export const a = 1;',

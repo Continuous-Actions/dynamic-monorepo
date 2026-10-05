@@ -7,9 +7,10 @@ Every list is a compact JSON array, sorted in **dependency order**: dependencies
 | `changed` | JSON array | Projects that contain changed files, plus projects that were added, renamed or redefined in the config. |
 | `affected` | JSON array | `changed` plus everything that transitively depends on those projects. |
 | `build` / `test` / `deploy` | JSON array | The `affected` projects that have that target. |
+| `build_batches` / `test_batches` / `deploy_batches` | JSON array of arrays | At most `max-jobs` balanced groups (default 256) that together contain every project in the list, in dependency order. Use these when a list can exceed GitHub's 256-job matrix limit. |
 | `added` | JSON array | Projects in the head config but not in the base config. |
 | `deleted` | JSON array | Projects that existed at base and are gone. They never appear in `affected`. |
-| `renamed` | JSON array | `[{"from":"old","to":"new"}]` for projects renamed at the same path. |
+| `renamed` | JSON array | `[{"from":"old","to":"new"}]` for projects renamed at the same path, or renamed and moved together by git. |
 | `skipped` | JSON array | Projects that were not affected. |
 | `paths` | JSON object | Maps each affected project to its directory: `{"api":"services/api"}`. |
 | `has_changes` / `has_build` / `has_test` / `has_deploy` | `"true"`/`"false"` | Whether the matching list is non-empty. Use these to guard matrix jobs. |
@@ -56,4 +57,4 @@ Project names are already restricted to `[A-Za-z0-9._@/-]`. Passing them through
 
 ## Size limits
 
-GitHub limits a job's outputs to 1 MB each and 50 MB in total, and a matrix to 256 jobs. With 50,000 short project names the lists stay well below 1 MB. The action warns if a target list has more than 256 entries. In that case, split the list across several jobs, or loop over it inside one job.
+GitHub limits a job's outputs to 1 MB each and 50 MB in total, and a matrix to 256 jobs. With 50,000 short project names the lists stay well below 1 MB. If a target list can exceed 256 entries, use the matching `*_batches` output.

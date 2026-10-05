@@ -95,8 +95,7 @@ jobs:
       - name: Cyclic config fails clearly
         run: |
           scripts/make-fixture.sh small "$RUNNER_TEMP/cycle"
-          printf '  shared2:\n    path: libs/shared2\n    dependsOn: [web]\n' >> "$RUNNER_TEMP/cycle/.github/dynamic-monorepos.yml"
-          sed -i 's/^  shared:$/  shared:\n    dependsOn: [shared2]/' "$RUNNER_TEMP/cycle/.github/dynamic-monorepos.yml"
+          node -e 'const f=process.argv[1],fs=require("fs"),c=JSON.parse(fs.readFileSync(f));c.projects.shared.dependsOn=["web"];fs.writeFileSync(f,JSON.stringify(c))' "$RUNNER_TEMP/cycle/dynamic-monorepo.config.json"
       - uses: ./
         id: cycle
         continue-on-error: true

@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/OpenMind-SI/dynamic-monorepos/v1/schema.json",
+  "title": "dynamic-monorepo.config.json",
+  "description": "Configuration for the dynamic-monorepos GitHub Action: projects, their dependencies, and which changes affect what.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "const": 1 },
+    "projects": {
+      "description": "Explicit projects. Keys are project names (used in matrices). Explicit entries win over inferred or discovered ones.",
+      "type": "object",
+      "propertyNames": { "pattern": "^[A-Za-z0-9@][A-Za-z0-9._@/-]{0,213}$" },
+      "additionalProperties": { "$ref": "#/$defs/project" }
+    },
+    "infer": {
+      "description": "Infer projects and dependencies from ecosystem manifests: node = package.json workspaces / pnpm-workspace.yaml, go = go.work + go.mod, cargo = Cargo.toml [workspace].",
+      "type": "array",
+      "items": { "enum": ["node", "go", "cargo"] },
+      "uniqueItems": true
+    },
+    "import": {
+      "description": "Import a project graph produced by another tool.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "nx": { "type": "string", "description": "Path to the output of `nx graph --file=<path>.json`." }
+      }
+    },
+    "discover": {
+      "description": "One project per sub-directory, named after the directory. Only the \"<dir>/*\" form is supported.",
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[^*?]*\\*$" }
+    },
+    "targets": {
+      "description": "Repository-wide per-target settings. Changes matching a target's exclude globs don't trigger that target anywhere (e.g. test-only edits don't redeploy).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "build": { "$ref": "#/$defs/targetSettings" },
+        "test": { "$ref": "#/$defs/targetSettings" },
+        "deploy": { "$ref": "#/$defs/targetSettings" }
+      }
+    },
+    "global": { "description": "Globs whose changes select every project.", "$ref": "#/$defs/globs" },
+    "ignore": { "description": "Globs whose changes are ignored everywhere.", "$ref": "#/$defs/globs" }
+  },
+  "$defs": {
+    "glob": {
+      "type": "string",
+      "description": "Repository-root-relative glob. Supports *, ** and ?; a trailing / means /**.",
+      "pattern": "^[^/{}\\[\\]!\\\\][^{}\\[\\]!\\\\]*$"
+    },
+    "globs": { "type": "array", "items": { "$ref": "#/$defs/glob" } },
+    "targetSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "exclude": { "$ref": "#/$defs/globs" } }
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string", "description": "Directory owned by the project; the deepest match wins. \".\" is the repository root." },
+        "dependsOn": { "type": "array", "items": { "type": "string" }, "description": "Projects this project depends on." },
+        "targets": {
+          "description": "Which of build/test/deploy the project appears in. Default [\"build\", \"test\"]. Use the object form for per-target excludes.",
+          "oneOf": [
+            { "type": "array", "items": { "enum": ["build", "test", "deploy"] }, "uniqueItems": true },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "build": { "$ref": "#/$defs/targetSettings" },
+                "test": { "$ref": "#/$defs/targetSettings" },
+                "deploy": { "$ref": "#/$defs/targetSettings" }
+              }
+            }
+          ]
+        },
+        "include": { "description": "Extra files (outside path) that belong to the project.", "$ref": "#/$defs/globs" },
+        "exclude": { "description": "Files under path that never count as changes.", "$ref": "#/$defs/globs" }
+      }
+    }
+  }
+}
