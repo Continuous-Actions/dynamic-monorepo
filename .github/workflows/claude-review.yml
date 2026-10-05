@@ -14,7 +14,7 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository &&
       (github.event.action != 'review_requested' ||
        github.event.requested_team.slug == 'claude-review')
-    uses: OpenMind-SI/.github/.github/workflows/claude-review.yml@main
+    uses: OpenMind-SI/.github/.github/workflows/claude-review.yml@cee912b00ee32060ca3fc6c03b320c8007444935
     secrets: inherit
     permissions:
       contents: read
