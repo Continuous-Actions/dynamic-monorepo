@@ -8,6 +8,10 @@
 // Patterns are always anchored at the repository root. Anything else that
 // looks like extended glob syntax ({a,b}, [abc], !negation) is rejected so a
 // pattern never silently means something other than what the author expects.
+//
+// Matching never uses regular expressions: segments are compared with a
+// linear wildcard matcher and "**" with dynamic programming over segments, so
+// hostile patterns or file names cannot cause catastrophic backtracking.
 
 export type Matcher = { pattern: string; test: (path: string) => boolean };
 
@@ -26,30 +30,33 @@ export function validatePattern(pattern: string): string | undefined {
 export function compileGlob(pattern: string): Matcher {
   const problem = validatePattern(pattern);
   if (problem) throw new Error(`invalid glob "${pattern}": ${problem}`);
-  let p = pattern.replace(/^\.\//, '');
-  if (p.endsWith('/')) p += '**';
-  // Collapse runs of "**" (they are equivalent) and compile each other segment
-  // into a small anchored regex. "**" is matched by dynamic programming over
-  // segments, which is O(pattern segments x path segments) with no backtracking.
-  const segs: (RegExp | '**')[] = [];
-  for (const seg of p.split('/')) {
-    if (seg === '**') {
-      if (segs[segs.length - 1] !== '**') segs.push('**');
-      continue;
-    }
-    let re = '';
-    for (const ch of seg) {
-      if (ch === '*') re += re.endsWith('[^/]*') ? '' : '[^/]*';
-      else if (ch === '?') re += '[^/]';
-      else re += ch.replace(/[.+^$()|]/g, '\\$&');
-    }
-    segs.push(new RegExp(`^${re}$`));
-  }
-  return { pattern, test: (path) => matchSegments(segs, path.split('/')) };
+  return { pattern, test: compileSegments(pattern) };
 }
 
-function matchSegments(pat: readonly (RegExp | '**')[], parts: readonly string[]): boolean {
-  // reach[j] = pattern prefix consumed so far can align with parts[0..j)
+/** Compiles a glob without validation (callers validate). Returns a path tester. */
+export function compileSegments(pattern: string): (path: string) => boolean {
+  let p = pattern.replace(/^\.\//, '');
+  if (p.endsWith('/')) p += '**';
+  const segs: string[] = [];
+  for (const seg of p.split('/')) {
+    if (seg === '**') {
+      if (segs[segs.length - 1] !== '**') segs.push('**'); // "**/**" == "**"
+    } else {
+      segs.push(seg.replace(/\*+/g, '*'));
+    }
+  }
+  // Literal leading directories give a cheap pre-filter for the common case.
+  const literal: string[] = [];
+  for (const seg of segs) {
+    if (/[*?]/.test(seg)) break;
+    literal.push(seg);
+  }
+  const prefix = literal.join('/');
+  return (path) => path.startsWith(prefix) && matchSegments(segs, path.split('/'));
+}
+
+function matchSegments(pat: readonly string[], parts: readonly string[]): boolean {
+  // reach[j] = the pattern prefix consumed so far can align with parts[0..j)
   let reach = new Uint8Array(parts.length + 1);
   reach[0] = 1;
   for (const seg of pat) {
@@ -61,11 +68,39 @@ function matchSegments(pat: readonly (RegExp | '**')[], parts: readonly string[]
         next[j] = on;
       }
     } else {
-      for (let j = 0; j < parts.length; j++) if (reach[j] && seg.test(parts[j]!)) next[j + 1] = 1;
+      for (let j = 0; j < parts.length; j++) if (reach[j] && wildcard(seg, parts[j]!)) next[j + 1] = 1;
     }
     reach = next;
   }
   return reach[parts.length] === 1;
+}
+
+/**
+ * Matches one path segment against a pattern with "*" and "?" in O(n*m) worst
+ * case without recursion (classic single-backtrack-point algorithm).
+ */
+export function wildcard(pattern: string, text: string): boolean {
+  let p = 0;
+  let t = 0;
+  let star = -1;
+  let mark = 0;
+  while (t < text.length) {
+    const c = pattern[p];
+    if (c === '?' || (c !== undefined && c !== '*' && c === text[t])) {
+      p++;
+      t++;
+    } else if (c === '*') {
+      star = p++;
+      mark = t;
+    } else if (star >= 0) {
+      p = star + 1;
+      t = ++mark;
+    } else {
+      return false;
+    }
+  }
+  while (pattern[p] === '*') p++;
+  return p === pattern.length;
 }
 
 export function anyMatch(matchers: readonly Matcher[], path: string): Matcher | undefined {

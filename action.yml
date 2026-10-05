@@ -1,5 +1,5 @@
 name: Dynamic Monorepo
-description: Map changed files to projects, walk the dependency graph, and output affected-project matrices with reasons.
+description: Find the monorepo projects a change affects (no config needed) and output build, test, deploy and docker matrices with reasons.
 author: OpenMind-SI
 branding:
   icon: share-2
@@ -7,7 +7,7 @@ branding:
 
 inputs:
   config:
-    description: Path to the configuration file, relative to the working directory.
+    description: Path to the optional configuration file, relative to the working directory. Without it (default path only), projects are auto-detected from marker files.
     default: dynamic-monorepo.config.json
   base:
     description: >-
@@ -44,12 +44,16 @@ outputs:
     description: JSON array of affected projects with the "test" target.
   deploy:
     description: JSON array of affected projects with the "deploy" target.
+  docker:
+    description: JSON array of affected projects with the "docker" target (auto-detected projects with a Dockerfile or Containerfile).
   build_batches:
     description: 'JSON array of at most max-jobs arrays that together contain every project in build, for very large monorepos: matrix.batch is a list of projects.'
   test_batches:
     description: Like build_batches, for test.
   deploy_batches:
     description: Like build_batches, for deploy.
+  docker_batches:
+    description: Like build_batches, for docker.
   added:
     description: JSON array of projects that exist in the config at head but not at base.
   deleted:
@@ -60,6 +64,8 @@ outputs:
     description: JSON array of projects that are not affected.
   paths:
     description: 'JSON object mapping each affected project to its directory, e.g. fromJSON(needs.plan.outputs.paths)[matrix.project].'
+  dockerfiles:
+    description: 'JSON object mapping each project in docker to its Dockerfile, e.g. fromJSON(needs.plan.outputs.dockerfiles)[matrix.project].'
   has_changes:
     description: '"true" if any project is affected.'
   has_build:
@@ -68,6 +74,8 @@ outputs:
     description: '"true" if the test list is non-empty.'
   has_deploy:
     description: '"true" if the deploy list is non-empty.'
+  has_docker:
+    description: '"true" if the docker list is non-empty.'
   all:
     description: '"true" if every project was selected (global file changed, or no usable comparison base).'
   reason:

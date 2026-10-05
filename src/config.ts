@@ -7,13 +7,15 @@
 
 import { parseJsonStrict } from './json.ts';
 import { compileGlob, validatePattern, type Matcher } from './glob.ts';
-import { importNx, infer, INFER_KINDS, type Inferred, type InferKind, type RepoReader } from './infer.ts';
+import { detect, type Detection } from './detect.ts';
+import { Graph } from './graph.ts';
+import { importNx, infer, INFER_KINDS, SKIP_DIRS, type Inferred, type InferKind, type RepoReader } from './infer.ts';
 import { normalizeDir } from './paths.ts';
 
 export { normalizeDir } from './paths.ts';
 export type { RepoReader } from './infer.ts';
 
-export const TARGETS = ['build', 'test', 'deploy'] as const;
+export const TARGETS = ['build', 'test', 'deploy', 'docker'] as const;
 export type Target = (typeof TARGETS)[number];
 export const DEFAULT_TARGETS: readonly Target[] = ['build', 'test'];
 
@@ -36,9 +38,11 @@ export type Project = {
   targetExclude: Partial<Record<Target, Matcher[]>>;
   /** Where the project came from, for explanations. */
   source: Source;
+  /** Dockerfile found by auto-detection (repo-relative). */
+  dockerfile?: string;
 };
 
-export type Source = 'projects' | 'discover' | InferKind | 'nx';
+export type Source = 'projects' | 'discover' | InferKind | 'nx' | 'detect';
 
 export type Config = {
   projects: Map<string, Project>;
@@ -48,6 +52,10 @@ export type Config = {
   targetExclude: Record<Target, Matcher[]>;
   /** Fingerprint of settings whose change affects every project. */
   globalsKey: string;
+  /** What auto-detection found, when "detect" is on. */
+  detection?: Detection;
+  /** Non-fatal problems worth surfacing in the log (e.g. a project path that does not exist). */
+  warnings: string[];
 };
 
 export class ConfigError extends Error {
@@ -61,7 +69,7 @@ export class ConfigError extends Error {
 
 const NAME_RE = /^[A-Za-z0-9@][A-Za-z0-9._@/-]{0,213}$/;
 const RESERVED = new Set(['__proto__', 'constructor', 'prototype']);
-const TOP_KEYS = new Set(['$schema', 'version', 'projects', 'discover', 'infer', 'import', 'targets', 'global', 'ignore']);
+const TOP_KEYS = new Set(['$schema', 'version', 'projects', 'detect', 'discover', 'infer', 'import', 'targets', 'global', 'ignore']);
 const PROJECT_KEYS = new Set(['path', 'dependsOn', 'targets', 'include', 'exclude']);
 
 export function validateName(name: string): string | undefined {
@@ -88,6 +96,7 @@ export function parseConfig(text: string, file: string, reader?: RepoReader): Co
 
 export function validateConfig(doc: unknown, file: string, reader?: RepoReader): Config {
   const problems: string[] = [];
+  const warnings: string[] = [];
   if (!isPlainObject(doc)) throw new ConfigError(file, ['top level must be a mapping']);
 
   for (const key of Object.keys(doc)) {
@@ -106,6 +115,9 @@ export function validateConfig(doc: unknown, file: string, reader?: RepoReader):
       if (p) projects.set(name, p);
     }
   }
+  // Explicitly declared edges, kept separately: a cycle among these is a configuration
+  // mistake (hard error), while cycles that come from manifests (e.g. dev-dependencies) are tolerated.
+  const explicitEdges = new Map([...projects.values()].map((p) => [p.name, [...p.dependsOn]]));
 
   // Inferred (ecosystem manifests) and imported (Nx graph) projects come after explicit ones.
   const kinds = stringList(doc['infer'], '"infer"', problems);
@@ -128,16 +140,29 @@ export function validateConfig(doc: unknown, file: string, reader?: RepoReader):
       ...kinds.filter((k): k is InferKind => (INFER_KINDS as readonly string[]).includes(k)).flatMap((k) => infer(k, reader, problems)),
       ...(nxFile ? importNx(reader, nxFile, problems) : []),
     ];
-    mergeInferred(found, projects, problems);
+    mergeInferred(found, projects, problems, warnings);
+  }
+
+  // Auto-detected projects (marker files) come after explicit, inferred and imported ones.
+  const detectOn = doc['detect'] ?? false;
+  if (typeof detectOn !== 'boolean') problems.push('"detect" must be true or false');
+  let detection: Detection | undefined;
+  if (detectOn === true && reader) {
+    detection = detect(reader, (n) => validateName(n) === undefined, problems);
+    mergeDetected(detection, projects);
   }
 
   const discover = stringList(doc['discover'], '"discover"', problems);
   for (const pattern of discover) {
-    discoverProjects(pattern, projects, problems, reader);
+    discoverProjects(pattern, projects, problems, warnings, reader);
   }
 
   if (projects.size === 0 && problems.length === 0) {
-    problems.push('no projects defined (add "projects", "infer", "import" or "discover")');
+    problems.push(detectOn === true
+      ? 'no projects found. Auto-detection looks for package.json, go.mod, Cargo.toml, pyproject.toml, setup.py, pom.xml, ' +
+        'build.gradle(.kts), *.csproj, Dockerfile, Containerfile and Chart.yaml in committed files (skipping node_modules, vendor, dist, build, ' +
+        'target, fixtures and dot-directories). Add one of those, or list your projects under "projects" in dynamic-monorepo.config.json'
+      : 'no projects defined (add "projects", "detect", "infer", "import" or "discover")');
   }
   if (projects.size > LIMITS.projects) problems.push(`more than ${LIMITS.projects} projects`);
 
@@ -150,10 +175,11 @@ export function validateConfig(doc: unknown, file: string, reader?: RepoReader):
   }
 
   // Missing dependencies are reported here; cycles are reported by the graph.
+  let hints = 0;
   for (const p of projects.values()) {
     for (const dep of p.dependsOn) {
       if (!projects.has(dep)) {
-        const hint = suggest(dep, [...projects.keys()]);
+        const hint = hints++ < 20 ? suggest(dep, [...projects.keys()]) : undefined;
         problems.push(`project "${p.name}" depends on unknown project "${dep}"${hint ? ` (did you mean "${hint}"?)` : ''}`);
       }
     }
@@ -164,9 +190,63 @@ export function validateConfig(doc: unknown, file: string, reader?: RepoReader):
   const targetExclude = parseGlobalTargets(doc['targets'], problems);
 
   if (problems.length > 0) throw new ConfigError(file, problems);
-  const pats = (ms: Matcher[]) => ms.map((m) => m.pattern);
+  // Throws CycleError (with the full cycle) for cycles among explicitly declared dependencies.
+  new Graph([...projects.keys()].map((name) => ({ name, dependsOn: explicitEdges.get(name) ?? [] })));
+  const dirs = reader?.dirs?.();
+  if (dirs) {
+    for (const p of projects.values()) {
+      if (p.path !== '.' && !dirs.has(p.path)) warnings.push(`project "${p.name}" path "${p.path}" does not exist in the repository (check spelling and letter case)`);
+    }
+  }
+  const pats = (ms: Matcher[]) => ms.map((m) => m.pattern).sort();
   const globalsKey = JSON.stringify([pats(global), pats(ignore), TARGETS.map((t) => pats(targetExclude[t]))]);
-  return { projects, global, ignore, targetExclude, globalsKey };
+  return { projects, global, ignore, targetExclude, globalsKey, detection, warnings };
+}
+
+/**
+ * Adds auto-detected projects. An existing project at the same path wins (its
+ * settings are kept, detected dependencies and Dockerfile are added). A detected
+ * name already used by a project elsewhere falls back to the directory path.
+ */
+function mergeDetected(d: Detection, projects: Map<string, Project>): void {
+  const byPath = new Map([...projects.values()].map((p) => [p.path, p]));
+  const finalName = new Map<string, string>(); // detected name -> project name
+  for (const f of d.projects) {
+    const safe = normalizeDir(f.path);
+    if ('error' in safe) {
+      d.notes.push(`skipped "${f.path.slice(0, 80)}": the directory name ${safe.error}`);
+      continue;
+    }
+    const existing = byPath.get(f.path);
+    if (existing) {
+      finalName.set(f.name, existing.name);
+      existing.dockerfile ??= f.dockerfile;
+      continue;
+    }
+    let name = f.name;
+    if (projects.has(name)) name = f.path;
+    if (projects.has(name) || validateName(name) !== undefined) {
+      d.notes.push(`skipped "${f.path}": the name "${f.name}" is already used by another project`);
+      continue;
+    }
+    finalName.set(f.name, name);
+    const p: Project = {
+      name, path: f.path, dependsOn: [], targets: f.targets, include: f.include.map(compileGlob), exclude: [], targetExclude: {},
+      source: 'detect', dockerfile: f.dockerfile,
+    };
+    projects.set(name, p);
+    byPath.set(f.path, p);
+  }
+  for (const f of d.projects) {
+    const target = projects.get(finalName.get(f.name) ?? '');
+    if (!target) continue;
+    const deps = new Set(target.dependsOn);
+    for (const dep of f.dependsOn) {
+      const resolved = finalName.get(dep);
+      if (resolved && resolved !== target.name) deps.add(resolved);
+    }
+    target.dependsOn = [...deps].sort();
+  }
 }
 
 /**
@@ -174,7 +254,7 @@ export function validateConfig(doc: unknown, file: string, reader?: RepoReader):
  * but inferred dependency edges are kept (unioned), so you only declare what
  * the manifests cannot express.
  */
-function mergeInferred(found: Inferred[], projects: Map<string, Project>, problems: string[]): void {
+function mergeInferred(found: Inferred[], projects: Map<string, Project>, problems: string[], warnings: string[]): void {
   const byPath = new Map([...projects.values()].map((p) => [p.path, p.name]));
   const alias = new Map<string, string>(); // inferred name -> final project name
   for (const f of found) {
@@ -190,6 +270,9 @@ function mergeInferred(found: Inferred[], projects: Map<string, Project>, proble
       continue;
     }
     const existing = sameName ?? samePath;
+    if (sameName && sameName.path !== dir.path) {
+      warnings.push(`infer ${f.via}: "${f.name}" at "${dir.path}" is overridden by the explicit project of the same name at "${sameName.path}"`);
+    }
     if (existing) {
       alias.set(f.name, existing.name);
       continue;
@@ -277,7 +360,7 @@ function validateProject(name: string, raw: unknown, problems: string[]): Projec
 /** `targets` is a list (`[build, test]`) or a mapping (`{ build: {}, deploy: { exclude: [globs] } }`). */
 function parseTargets(raw: unknown, where: string, problems: string[]): { targets: Target[]; targetExclude: Partial<Record<Target, Matcher[]>> } {
   const targetExclude: Partial<Record<Target, Matcher[]>> = {};
-  if (raw === undefined) return { targets: [...DEFAULT_TARGETS], targetExclude };
+  if (raw === undefined || raw === null) return { targets: [...DEFAULT_TARGETS], targetExclude };
   const list: string[] = [];
   if (isPlainObject(raw)) {
     for (const [t, settings] of Object.entries(raw)) {
@@ -308,7 +391,7 @@ function parseTargets(raw: unknown, where: string, problems: string[]): { target
  * immediate sub-directory, named after the directory. Explicit "projects"
  * entries win over discovered ones (same name or same path).
  */
-function discoverProjects(pattern: string, projects: Map<string, Project>, problems: string[], reader?: RepoReader): void {
+function discoverProjects(pattern: string, projects: Map<string, Project>, problems: string[], warnings: string[], reader?: RepoReader): void {
   const m = /^(.*?)\/?\*$/.exec(pattern);
   const base = m ? normalizeDir(m[1] === '' ? '.' : m[1]) : undefined;
   if (!m || !base || 'error' in base) {
@@ -318,7 +401,7 @@ function discoverProjects(pattern: string, projects: Map<string, Project>, probl
   if (!reader) return;
   const explicitPaths = new Set([...projects.values()].map((p) => p.path));
   for (const dirName of reader.listDirs(base.path).sort()) {
-    if (dirName.startsWith('.')) continue;
+    if (dirName.startsWith('.') || SKIP_DIRS.has(dirName)) continue;
     const path = base.path === '.' ? dirName : `${base.path}/${dirName}`;
     if (explicitPaths.has(path)) continue;
     const existing = projects.get(dirName);
@@ -329,7 +412,7 @@ function discoverProjects(pattern: string, projects: Map<string, Project>, probl
     }
     const nameProblem = validateName(dirName);
     if (nameProblem) {
-      problems.push(`discovered directory "${truncate(path)}": ${nameProblem}`);
+      warnings.push(`skipped discovered directory "${truncate(path)}": ${nameProblem}`);
       continue;
     }
     projects.set(dirName, {
@@ -397,6 +480,6 @@ function editDistance(a: string, b: string, cap: number): number {
 
 /** Stable fingerprint of everything about a project that affects planning. */
 export function projectFingerprint(p: Project): string {
-  return JSON.stringify([p.path, p.dependsOn, p.targets, p.include.map((m) => m.pattern), p.exclude.map((m) => m.pattern),
-    TARGETS.map((t) => p.targetExclude[t]?.map((m) => m.pattern) ?? null)]);
+  const pats = (ms: Matcher[] | undefined) => ms?.map((m) => m.pattern).sort() ?? null;
+  return JSON.stringify([p.path, p.dependsOn, p.targets, pats(p.include), pats(p.exclude), TARGETS.map((t) => pats(p.targetExclude[t]))]);
 }

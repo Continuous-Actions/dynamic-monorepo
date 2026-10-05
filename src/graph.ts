@@ -5,7 +5,7 @@
 // on a changed project. Cycles are rejected because they make build order
 // undefined and are almost always a configuration mistake.
 
-import type { Project } from './config.ts';
+export type Node = { name: string; dependsOn: readonly string[] };
 
 export class CycleError extends Error {
   readonly cycle: string[];
@@ -19,6 +19,8 @@ export class CycleError extends Error {
 export type Reach = {
   /** Projects reached, mapped to the project they were reached from (undefined for seeds). */
   parent: Map<string, string | undefined>;
+  /** The seed each reached project was reached from. */
+  root: Map<string, string>;
 };
 
 export class Graph {
@@ -27,7 +29,12 @@ export class Graph {
   /** Topological rank: dependencies before dependents, ties broken by name. */
   readonly rank = new Map<string, number>();
 
-  constructor(projects: Iterable<Project>) {
+  /**
+   * Cycles throw CycleError unless allowCycles is set (used for manifest-inferred
+   * graphs, where e.g. dev-dependency cycles are legitimate); then the projects in
+   * and behind a cycle are ordered by name after everything else.
+   */
+  constructor(projects: Iterable<Node>, opts: { allowCycles?: boolean } = {}) {
     for (const p of projects) {
       this.deps.set(p.name, p.dependsOn);
       if (!this.dependents.has(p.name)) this.dependents.set(p.name, []);
@@ -40,11 +47,11 @@ export class Graph {
       }
     }
     for (const list of this.dependents.values()) list.sort(compare);
-    this.computeRank();
+    this.computeRank(opts.allowCycles ?? false);
   }
 
   /** Kahn's algorithm with a name-ordered queue => deterministic order. */
-  private computeRank(): void {
+  private computeRank(allowCycles: boolean): void {
     const indegree = new Map<string, number>();
     for (const [name, deps] of this.deps) indegree.set(name, deps.length);
     const heap = new MinHeap();
@@ -59,7 +66,9 @@ export class Graph {
         if (n === 0) heap.push(dependent);
       }
     }
-    if (this.rank.size !== this.deps.size) throw new CycleError(this.findCycle());
+    if (this.rank.size === this.deps.size) return;
+    if (!allowCycles) throw new CycleError(this.findCycle());
+    for (const name of [...this.deps.keys()].filter((n) => !this.rank.has(n)).sort(compare)) this.rank.set(name, i++);
   }
 
   /** Returns one concrete cycle (first node repeated at the end), for error messages. */
@@ -100,10 +109,12 @@ export class Graph {
    */
   reverseClosure(seeds: Iterable<string>): Reach {
     const parent = new Map<string, string | undefined>();
+    const root = new Map<string, string>();
     const queue: string[] = [];
     for (const s of [...seeds].sort(compare)) {
       if (!parent.has(s) && this.deps.has(s)) {
         parent.set(s, undefined);
+        root.set(s, s);
         queue.push(s);
       }
     }
@@ -112,20 +123,29 @@ export class Graph {
       for (const d of this.dependents.get(node)!) {
         if (!parent.has(d)) {
           parent.set(d, node);
+          root.set(d, root.get(node)!);
           queue.push(d);
         }
       }
     }
-    return { parent };
+    return { parent, root };
   }
 
-  /** Chain from a seed to `name`, e.g. ["shared", "api", "portal"]. */
-  static chain(reach: Reach, name: string): string[] {
+  /**
+   * Chain from a seed to `name`, e.g. ["shared", "api", "portal"]. Long chains are
+   * shortened to [seed, "…", last links] so explaining N projects stays O(N).
+   */
+  static chain(reach: Reach, name: string, max = 8): string[] {
     const out = [name];
     let cur = reach.parent.get(name);
-    while (cur !== undefined) {
+    while (cur !== undefined && out.length < max) {
       out.push(cur);
       cur = reach.parent.get(cur);
+    }
+    if (cur !== undefined) {
+      const seed = reach.root.get(name)!;
+      if (reach.parent.get(cur) !== undefined || cur !== seed) out.push('…');
+      out.push(seed);
     }
     return out.reverse();
   }

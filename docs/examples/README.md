@@ -5,7 +5,7 @@
 | [minimal](minimal/) | Three projects (`shared` → `api` → `web`) and a single build matrix. |
 | [realistic](realistic/) | Seven projects with converging dependencies, build, test and deploy matrices, merge queue support, and a required-check gate job. |
 
-Copy `dynamic-monorepo.config.json` to your repository root and `workflow.yml` to `.github/workflows/ci.yml`.
+Copy `workflow.yml` to `.github/workflows/ci.yml`. The config files show how to declare the graph explicitly; without one, projects are auto-detected (see the [README](../../README.md#what-it-detects)).
 
 The realistic graph:
 

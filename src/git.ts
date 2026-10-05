@@ -84,12 +84,13 @@ export class Git {
     const local = this.resolve(rev);
     if (local || !allowFetch) return local;
     if (SHA_RE.test(rev)) {
-      this.fetch([rev], 1);
+      // Never turn a full clone into a shallow one: only limit depth if already shallow.
+      this.fetch([rev], this.isShallow() ? 1 : undefined);
       return this.resolve(rev);
     }
     // A branch name: fetch it into its remote-tracking ref.
     if (REF_RE.test(rev) && !rev.startsWith('refs/')) {
-      this.fetch([`+refs/heads/${rev}:refs/remotes/origin/${rev}`], 1);
+      this.fetch([`+refs/heads/${rev}:refs/remotes/origin/${rev}`], this.isShallow() ? 1 : undefined);
       return this.resolve(`origin/${rev}`) ?? this.resolve(rev);
     }
     return undefined;
@@ -110,12 +111,62 @@ export class Git {
 
   /** Name-status diff between two commits (both must be present locally). */
   diff(base: string, head: string): FileChange[] {
-    const out = this.run(['diff', '--name-status', '-z', '-M', '--no-ext-diff', '--no-textconv', '--no-color', base, head, '--'])!;
+    // --ignore-submodules=none / --no-relative: repository or runner git config must not hide changes.
+    const out = this.run(['diff', '--name-status', '-z', '-M', '--no-ext-diff', '--no-textconv', '--no-color', '--ignore-submodules=none', '--no-relative', base, head, '--'])!;
     return parseNameStatus(out);
   }
 
   show(rev: string, path: string): string | undefined {
     return this.run(['show', `${rev}:${path}`], { allowFail: true });
+  }
+
+  /** Every file in a commit, or in the index when no revision is given. */
+  listFiles(rev?: string): string[] {
+    const args = rev
+      ? ['ls-tree', '-r', '-z', '--name-only', '--full-tree', '--end-of-options', rev]
+      : ['ls-files', '-z', '--cached', '--full-name', '--', ':/'];
+    return (this.run(args, { allowFail: true }) ?? '').split('\0').filter(Boolean);
+  }
+
+  /**
+   * Reads many files in one process (`git cat-file --batch`), at a commit or,
+   * with no revision, from the index. Missing files and files over maxBytes are left out.
+   */
+  readMany(rev: string | undefined, paths: string[], maxBytes: number): Map<string, string> {
+    const out = new Map<string, string>();
+    const wanted = paths.filter((p) => !/[\n\r]/.test(p));
+    if (wanted.length === 0) return out;
+    let buf: Buffer;
+    try {
+      buf = execFileSync('git', ['cat-file', '--batch'], {
+        cwd: this.cwd,
+        input: wanted.map((p) => `${rev ?? ''}:${p}\n`).join(''),
+        maxBuffer: 1024 * 1024 * 512,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' },
+        windowsHide: true,
+      });
+    } catch {
+      return out;
+    }
+    let pos = 0;
+    for (const path of wanted) {
+      const nl = buf.indexOf(10, pos);
+      if (nl < 0) break;
+      const m = /^[0-9a-f]+ (\w+) (\d+)$/.exec(buf.toString('utf8', pos, nl));
+      pos = nl + 1;
+      if (!m) continue; // "<spec> missing"
+      const size = Number(m[2]);
+      if (m[1] === 'blob' && size <= maxBytes) out.set(path, buf.toString('utf8', pos, pos + size));
+      pos += size + 1;
+    }
+    return out;
+  }
+
+  /** Every directory in the tree at a revision. */
+  allDirs(rev: string): Set<string> {
+    const out = this.run(['ls-tree', '-r', '-d', '-z', '--name-only', '--end-of-options', rev], { allowFail: true }) ?? '';
+    return new Set(out.split('\0').filter(Boolean));
   }
 
   /** Immediate sub-directories of `dir` at a revision. */

@@ -1,5 +1,7 @@
 // Human-readable explanations: a compact log and a GitHub job summary.
 
+import { TARGETS } from './config.ts';
+import { detectionSummary, type Detection } from './detect.ts';
 import type { Plan, Reason } from './plan.ts';
 import type { Range } from './range.ts';
 
@@ -31,7 +33,7 @@ function cap(list: string[], n = LIST_LIMIT): string[] {
   return list.length > n ? [...list.slice(0, n), `… and ${list.length - n} more`] : list;
 }
 
-export function textReport(plan: Plan, range: Range, verbose: boolean): string {
+export function textReport(plan: Plan, range: Range, verbose: boolean, notes: string[] = []): string {
   const lines: string[] = [];
   const section = (title: string, items: string[]) => {
     if (items.length === 0) return;
@@ -40,6 +42,7 @@ export function textReport(plan: Plan, range: Range, verbose: boolean): string {
   };
   lines.push(`${NAME}: ${plan.affected.length} affected / ${plan.affected.length + plan.skipped.length} projects`);
   lines.push(`Compared: ${rangeLine(range)}`);
+  for (const n of notes) lines.push(n);
   lines.push(`Changed files: ${plan.files.total}${plan.files.ignored ? ` (${plan.files.ignored} ignored)` : ''}`);
   if (plan.all) lines.push(`ALL projects selected: ${plan.allReason}`);
   const direct = plan.affected.filter((n) => plan.reasons.get(n)?.kind !== 'dependency');
@@ -49,6 +52,7 @@ export function textReport(plan: Plan, range: Range, verbose: boolean): string {
   section('Build', plan.targets.build);
   section('Test', plan.targets.test);
   section('Deploy', plan.targets.deploy);
+  section('Docker', plan.targets.docker);
   section('Added', plan.added);
   section('Deleted', plan.deleted);
   section('Renamed', plan.renamed.map((r) => `${r.from} → ${r.to}`));
@@ -69,23 +73,41 @@ const code = (s: string) => `\`${s.replace(/[\x00-\x1f\x7f\u2028\u2029`|]+/g, ' 
 // characters first so nothing can start a new Markdown line (heading, list,
 // blockquote, table row), then entity-encode everything with inline meaning.
 export const esc = (s: string) =>
-  s.replace(/[\x00-\x1f\x7f\u2028\u2029]+/g, ' ').replace(/[&<>"'|`\\\[\]*_#~@:!=-]/g, (c) => `&#${c.charCodeAt(0)};`);
+  s.replace(/[\x00-\x1f\x7f\u2028\u2029]+/g, ' ').replace(/[&<>"'|`\\\[\]*_#~@:!=.-]/g, (c) => `&#${c.charCodeAt(0)};`);
 
-export function markdownReport(plan: Plan, range: Range): string {
+/** Explains what auto-detection found and the rules it applied. Empty when detection is off. */
+export function detectionLines(d: Detection | undefined, noConfigFile: boolean): string[] {
+  if (!d) return [];
+  const lines = [`Detected ${detectionSummary(d)}${noConfigFile ? ` (no ${CONFIG_FILE}, so projects come from marker files)` : ''}.`];
+  for (const l of d.lockfiles) lines.push(`${l.file} changes select every ${l.kind} project (${l.projects}).`);
+  if (d.projects.some((p) => p.targets.includes('docker'))) {
+    lines.push('Projects with a Dockerfile or Containerfile get the docker and deploy targets; projects with a Chart.yaml get deploy.');
+  }
+  lines.push(d.projects.some((p) => p.path === '.')
+    ? 'A project at the repository root owns every file that is not inside another project.'
+    : 'Changed files outside every project (for example .github/ or root scripts) select nothing.');
+  for (const n of d.notes) lines.push(`Note: ${n}.`);
+  return lines;
+}
+
+export function markdownReport(plan: Plan, range: Range, notes: string[] = []): string {
   const out: string[] = [];
   out.push(`## ${NAME}`);
   out.push('');
   out.push(`**${plan.affected.length}** of **${plan.affected.length + plan.skipped.length}** projects affected · ` +
-    `build **${plan.targets.build.length}** · test **${plan.targets.test.length}** · deploy **${plan.targets.deploy.length}** · ` +
+    `${TARGETS.map((t) => `${t} **${plan.targets[t].length}**`).join(' · ')} · ` +
     `${plan.files.total} changed file(s)`);
   out.push('');
   out.push(`Compared: ${esc(rangeLine(range))}`);
   if (plan.all) out.push('', `> [!WARNING]\n> All projects selected: ${esc(plan.allReason ?? '')}`);
+  if (notes.length) {
+    out.push('', '<details><summary>How projects were found</summary>', '', notes.map((n) => `- ${esc(n)}`).join('\n'), '', '</details>');
+  }
   out.push('');
   if (plan.affected.length > 0) {
     out.push('| Project | Targets | Why |', '| --- | --- | --- |');
     for (const n of cap(plan.affected, 200)) {
-      const targets = (['build', 'test', 'deploy'] as const).filter((t) => plan.targets[t].includes(n)).join(', ');
+      const targets = TARGETS.filter((t) => plan.targets[t].includes(n)).join(', ');
       out.push(`| ${code(n)} | ${targets || '—'} | ${esc(explain(plan.reasons.get(n)))} |`);
     }
     out.push('');
@@ -124,11 +146,13 @@ export function serialize(p: Plan) {
     build: p.targets.build,
     test: p.targets.test,
     deploy: p.targets.deploy,
+    docker: p.targets.docker,
     added: p.added,
     deleted: p.deleted,
     renamed: p.renamed,
     skipped: p.skipped,
     paths: p.paths,
+    dockerfiles: p.dockerfiles,
     reasons: Object.fromEntries([...p.reasons].sort(([a], [b]) => (a < b ? -1 : 1))),
     files: p.files,
   };

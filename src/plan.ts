@@ -25,6 +25,8 @@ export type Plan = {
   renamed: { from: string; to: string }[];
   skipped: string[];
   paths: Record<string, string>;
+  /** Dockerfile of each project in the docker list, when known. */
+  dockerfiles: Record<string, string>;
   reasons: Map<string, Reason>;
   files: { total: number; ignored: number; unowned: string[]; global: string[] };
 };
@@ -75,7 +77,7 @@ export class Owners {
 
 export function plan(input: PlanInput): Plan {
   const { head, configPath, changes } = input;
-  const graph = new Graph(head.projects.values());
+  const graph = new Graph(head.projects.values(), { allowCycles: true });
   const owners = new Owners(head);
   const reasons = new Map<string, Reason>();
   const fileHits = new Map<string, string[]>();
@@ -130,7 +132,6 @@ export function plan(input: PlanInput): Plan {
   const base = input.base;
 
   if (base) {
-    const headByPath = new Map([...head.projects.values()].map((p) => [p.path, p.name]));
     const baseByPath = new Map([...base.projects.values()].map((p) => [p.path, p.name]));
     for (const p of head.projects.values()) {
       const old = base.projects.get(p.name);
@@ -142,8 +143,9 @@ export function plan(input: PlanInput): Plan {
       if (oldName !== undefined && !head.projects.has(oldName)) renamed.push({ from: oldName, to: p.name });
       else added.push(p.name);
     }
+    const renamedFrom = new Set(renamed.map((r) => r.from));
     for (const p of base.projects.values()) {
-      if (!head.projects.has(p.name) && headByPath.get(p.path) === undefined) deleted.push(p.name);
+      if (!head.projects.has(p.name) && !renamedFrom.has(p.name)) deleted.push(p.name);
     }
     // Renamed AND moved: most of a deleted project's files were git-renamed into one added project.
     for (const pair of movedProjects(changes, new Owners(base), owners, new Set(deleted), new Set(added))) {
@@ -200,6 +202,11 @@ export function plan(input: PlanInput): Plan {
   const affected = graph.sort(affectedSet);
   const paths: Record<string, string> = Object.create(null);
   for (const name of affected) paths[name] = head.projects.get(name)!.path;
+  const dockerfiles: Record<string, string> = Object.create(null);
+  for (const name of targets.docker) {
+    const f = head.projects.get(name)!.dockerfile;
+    if (f) dockerfiles[name] = f;
+  }
 
   return {
     all: allReason !== undefined,
@@ -212,6 +219,7 @@ export function plan(input: PlanInput): Plan {
     renamed: renamed.sort((a, b) => compare(a.to, b.to)),
     skipped: graph.sort([...head.projects.keys()].filter((n) => !affectedSet.has(n))),
     paths,
+    dockerfiles,
     reasons,
     files: { total, ignored, unowned: unowned.sort(compare), global: globalHits.sort(compare) },
   };

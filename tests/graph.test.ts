@@ -84,11 +84,11 @@ describe('job summary escaping', () => {
     const evil = 'a |\n| forged | row |\n# Injected heading\n> quote';
     const plan: any = {
       all: true, allReason: `global file changed: ${evil}`, changed: ['api'], affected: ['api'],
-      targets: { build: ['api'], test: [], deploy: [] }, added: [], deleted: [], renamed: [], skipped: [], paths: { api: 'api' },
+      targets: { build: ['api'], test: [], deploy: [], docker: [] }, added: [], deleted: [], renamed: [], skipped: [], paths: { api: 'api' },
       reasons: new Map([['api', { kind: 'files', files: [evil], count: 1 }]]),
       files: { total: 2, ignored: 0, unowned: [evil], global: [evil] },
     };
-    const md = markdownReport(plan, { kind: 'all', head: 'x', why: evil });
+    const md = markdownReport(plan, { kind: 'all', head: 'x', why: evil }, [evil]);
     for (const line of md.split('\n')) {
       expect(line).not.toMatch(/^(# Injected|\| forged|> quote)/);
     }
@@ -101,7 +101,7 @@ describe('job summary project names', () => {
     const { markdownReport } = await import('../src/report.ts');
     const evil = 'x\n# Injected`|';
     const plan: any = {
-      all: false, changed: [evil], affected: [evil], targets: { build: [], test: [], deploy: [] },
+      all: false, changed: [evil], affected: [evil], targets: { build: [], test: [], deploy: [], docker: [] },
       added: [evil], deleted: [evil], renamed: [{ from: evil, to: evil }], skipped: [evil], paths: {},
       reasons: new Map(), files: { total: 0, ignored: 0, unowned: [], global: [] },
     };

@@ -346,12 +346,12 @@ describe('failures are loud and clear', () => {
     return r.stdout;
   };
 
-  it('missing configuration', () => {
+  it('missing configuration and nothing to detect', () => {
     const repo = new Repo();
     repo.commit('init', { 'x': '1' });
     const r = runAction(repo);
     expect(r.code).toBe(1);
-    expect(r.stdout).toMatch(/::error.*file not found/);
+    expect(r.stdout).toMatch(/::error.*no projects found/);
   });
   it('malformed YAML', () => expect(fail('projects:\n  a: [unclosed')).toMatch(/::error.*JSON syntax error: unexpected character "p" at line 1, column 1/));
   it('duplicate project keys', () => {

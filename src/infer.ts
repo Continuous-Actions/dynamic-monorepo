@@ -2,6 +2,7 @@
 // Everything here only *reads* files through a RepoReader; nothing is executed.
 
 import { load, CORE_SCHEMA } from 'js-yaml';
+import { compileSegments, wildcard } from './glob.ts';
 import { normalizeDir } from './paths.ts';
 
 export type RepoReader = {
@@ -9,6 +10,12 @@ export type RepoReader = {
   listDirs(dir: string): string[];
   /** File contents, or undefined if the file does not exist. */
   read(path: string): string | undefined;
+  /** Every committed file, repo-relative (used by auto-detection). */
+  listFiles(): string[];
+  /** Contents of many files at once; missing or oversized files are left out. */
+  readMany(paths: string[]): Map<string, string>;
+  /** Optional: every directory in the tree (used to warn about project paths that don't exist). */
+  dirs?(): Set<string>;
 };
 
 export type Inferred = { name: string; path: string; dependsOn: string[]; via: string };
@@ -16,31 +23,39 @@ export const INFER_KINDS = ['node', 'go', 'cargo'] as const;
 export type InferKind = (typeof INFER_KINDS)[number];
 
 const MAX_DEPTH = 6;
-const SKIP_DIRS = new Set(['node_modules', 'vendor', 'target', 'dist', 'build']);
+export const SKIP_DIRS = new Set(['node_modules', 'vendor', 'target', 'dist', 'build']);
 const MAX_MANIFEST = 1024 * 1024;
 
-/** Expands workspace-style directory patterns: "a/b", "a/*", "a/**". */
-export function expandDirPattern(reader: RepoReader, pattern: string): string[] {
-  let p = pattern.trim().replace(/^\.\//, '').replace(/\/+$/, '');
+/** Expands workspace-style directory patterns: "a/b", "a/*", "a/**". Returns undefined for unsafe patterns. */
+export function expandDirPattern(reader: RepoReader, pattern: string): string[] | undefined {
+  const p = pattern.trim().replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
   if (p.startsWith('!')) return []; // exclusions are handled by the caller
   if (p === '' || p === '.') return ['.'];
-  const parts = p.split('/');
-  let current: string[] = ['.'];
+  const parts: string[] = [];
+  for (const part of p.split('/')) {
+    if (part === '..' || part.startsWith('/') || /^[A-Za-z]:$/.test(part)) return undefined;
+    if (part === '.' || part === '') continue;
+    if (part === '**') {
+      if (parts[parts.length - 1] !== '**') parts.push('**'); // "**/**" == "**"
+    } else {
+      parts.push(part.replace(/\*+/g, '*'));
+    }
+  }
+  let current = new Set<string>(['.']);
   for (const part of parts) {
-    const next: string[] = [];
+    const next = new Set<string>();
     for (const dir of current) {
       if (part === '**') {
-        next.push(...walk(reader, dir, MAX_DEPTH));
-      } else if (part.includes('*')) {
-        const re = new RegExp(`^${part.replace(/[.+^$()|[\]{}\\]/g, '\\$&').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]')}$`);
-        for (const d of reader.listDirs(dir)) if (re.test(d) && !d.startsWith('.') && !SKIP_DIRS.has(d)) next.push(join(dir, d));
-      } else if (part !== '..') {
-        next.push(join(dir, part));
+        for (const d of walk(reader, dir, MAX_DEPTH)) next.add(d);
+      } else if (/[*?]/.test(part)) {
+        for (const d of reader.listDirs(dir)) if (!d.startsWith('.') && !SKIP_DIRS.has(d) && wildcard(part, d)) next.add(join(dir, d));
+      } else {
+        next.add(join(dir, part));
       }
     }
     current = next;
   }
-  return [...new Set(current)].sort();
+  return [...current].sort();
 }
 
 function walk(reader: RepoReader, dir: string, depth: number): string[] {
@@ -70,8 +85,13 @@ function parseJson(text: string | undefined): any {
 }
 
 function excluded(patterns: string[]): (dir: string) => boolean {
-  const negs = patterns.filter((p) => p.startsWith('!')).map((p) => p.slice(1).replace(/^\.\//, '').replace(/\/+$/, ''));
-  return (dir) => negs.some((n) => n === dir || (n.endsWith('/**') && dir.startsWith(n.slice(0, -2))) || (n.endsWith('/*') && dir.startsWith(n.slice(0, -1)) && !dir.slice(n.length - 1).includes('/')));
+  const tests = patterns.filter((p) => p.startsWith('!')).map((p) => {
+    const g = p.slice(1).trim().replace(/^\.\//, '').replace(/\/+$/, '');
+    const self = compileSegments(g);
+    const below = compileSegments(`${g}/**`);
+    return (dir: string) => self(dir) || below(dir);
+  });
+  return (dir) => tests.some((t) => t(dir));
 }
 
 /** package.json workspaces (npm, Yarn, Bun) and pnpm-workspace.yaml. Names are package names. */
@@ -98,14 +118,25 @@ export function inferNode(reader: RepoReader, problems: string[]): Inferred[] {
   const isExcluded = excluded(patterns);
   const pkgs = new Map<string, { path: string; deps: string[] }>();
   for (const pattern of patterns) {
-    for (const dir of expandDirPattern(reader, pattern)) {
+    const dirs = expandDirPattern(reader, pattern);
+    if (!dirs) {
+      problems.push(`infer node: workspace pattern "${pattern.slice(0, 80)}" must stay inside the repository`);
+      continue;
+    }
+    for (const dir of dirs) {
       if (dir === '.' || isExcluded(dir)) continue;
       const pkg = parseJson(readSafe(reader, `${dir}/package.json`));
       if (!pkg || typeof pkg.name !== 'string') continue;
       const deps = new Set<string>();
       for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
         const d = pkg[field];
-        if (d && typeof d === 'object' && !Array.isArray(d)) for (const k of Object.keys(d)) deps.add(k);
+        if (!d || typeof d !== 'object' || Array.isArray(d)) continue;
+        for (const [k, v] of Object.entries(d)) {
+          deps.add(k);
+          // Aliases: "x": "npm:@scope/real@1" or "workspace:real@*" point at another package.
+          const alias = typeof v === 'string' ? /^(?:npm|workspace):((?:@[^/@]+\/)?[^@]+)@/.exec(v)?.[1] : undefined;
+          if (alias) deps.add(alias);
+        }
       }
       const prev = pkgs.get(pkg.name);
       if (prev && prev.path !== dir) problems.push(`infer node: package "${pkg.name}" exists in both "${prev.path}" and "${dir}"`);
@@ -129,13 +160,14 @@ export function inferGo(reader: RepoReader, problems: string[]): Inferred[] {
     const block = m[1] ?? m[2] ?? '';
     for (const raw of block.split(/\s+/).filter(Boolean)) {
       const n = normalizeDir(raw.replace(/^"|"$/g, ''));
-      if ('path' in n && n.path !== '.') dirs.add(n.path);
+      if ('path' in n) dirs.add(n.path);
     }
   }
   const modules = new Map<string, string>(); // module path -> dir
-  const requires = new Map<string, Set<string>>();
+  const requires = new Map<string, Set<string>>(); // dir -> required module paths
+  const localDeps = new Map<string, Set<string>>(); // dir -> dirs from "replace x => ../dir"
   for (const dir of [...dirs].sort()) {
-    const gomod = readSafe(reader, `${dir}/go.mod`);
+    const gomod = readSafe(reader, dir === '.' ? 'go.mod' : `${dir}/go.mod`);
     if (gomod === undefined) {
       problems.push(`infer go: ${dir}/go.mod not found`);
       continue;
@@ -145,21 +177,38 @@ export function inferGo(reader: RepoReader, problems: string[]): Inferred[] {
     if (!mod) continue;
     modules.set(mod, dir);
     const req = new Set<string>();
-    for (const m of text.matchAll(/^\s*(?:require|replace)\s*\(([\s\S]*?)\)|^\s*(?:require|replace)\s+(\S+)/gm)) {
+    const local = new Set<string>();
+    for (const m of text.matchAll(/^\s*(?:require|replace)\s*\(([\s\S]*?)\)|^\s*(?:require|replace)\s+([^\n]+)/gm)) {
       for (const line of (m[1] ?? m[2] ?? '').split('\n')) {
-        const first = line.trim().split(/\s+/)[0];
-        if (first) req.add(first.replace(/^"|"$/g, ''));
+        const words = line.trim().split(/\s+/);
+        if (words[0]) req.add(words[0].replace(/^"|"$/g, ''));
+        const arrow = words.indexOf('=>');
+        const target = arrow >= 0 ? words[arrow + 1]?.replace(/^"|"$/g, '') : undefined;
+        if (target && (target.startsWith('./') || target.startsWith('../'))) {
+          const resolved = resolveRel(dir, target);
+          if (resolved !== undefined) local.add(resolved);
+        }
       }
     }
     requires.set(dir, req);
+    localDeps.set(dir, local);
   }
-  return [...modules].map(([mod, dir]) => ({
-    name: dir, path: dir, via: 'go',
-    dependsOn: [...(requires.get(dir) ?? [])].map((r) => modules.get(r)).filter((d): d is string => d !== undefined && d !== dir).sort(),
-  }));
+  const dirSet = new Set(modules.values());
+  // Name modules by directory; the root module ("use .") is named after its module path's last element.
+  const nameOf = (dir: string, mod: string) => (dir === '.' ? mod.split('/').pop() || mod : dir);
+  const names = new Map([...modules].map(([mod, dir]) => [dir, nameOf(dir, mod)]));
+  return [...modules].map(([mod, dir]) => {
+    const deps = new Set<string>();
+    for (const r of requires.get(dir) ?? []) {
+      const d = modules.get(r);
+      if (d !== undefined && d !== dir) deps.add(names.get(d)!);
+    }
+    for (const d of localDeps.get(dir) ?? []) if (dirSet.has(d) && d !== dir) deps.add(names.get(d)!);
+    return { name: names.get(dir)!, path: dir, via: 'go', dependsOn: [...deps].sort() };
+  });
 }
 
-const stripGoComments = (s: string) => s.replace(/\/\/[^\n]*/g, '');
+export const stripGoComments = (s: string) => s.replace(/\/\/[^\n]*/g, '');
 
 /** Cargo [workspace] members; edges from path dependencies (directly or via workspace.dependencies). Names are crate names. */
 export function inferCargo(reader: RepoReader, problems: string[]): Inferred[] {
@@ -171,28 +220,50 @@ export function inferCargo(reader: RepoReader, problems: string[]): Inferred[] {
     problems.push('infer cargo: Cargo.toml has no [workspace] members');
     return [];
   }
-  const excludes: string[] = Array.isArray(workspace['exclude']) ? workspace['exclude'].filter((x: unknown) => typeof x === 'string') : [];
+  const excludes: string[] = Array.isArray(workspace['exclude'])
+    ? workspace['exclude'].filter((x: unknown): x is string => typeof x === 'string').map((e: string) => e.replace(/^\.\//, '').replace(/\/+$/, ''))
+    : [];
+  const isExcluded = (dir: string) => excludes.some((e) => dir === e || dir.startsWith(`${e}/`));
   const wsDeps: Record<string, any> = workspace['dependencies'] ?? {};
   const crates = new Map<string, { path: string; deps: Set<string> }>();
   const byDir = new Map<string, string>();
   const manifests: [string, any][] = [];
+  const addCrate = (dir: string, manifest: any) => {
+    const name = manifest?.['package']?.['name'];
+    if (typeof name !== 'string') return;
+    const prev = crates.get(name);
+    if (prev && prev.path !== dir) {
+      problems.push(`infer cargo: crate "${name}" exists in both "${prev.path}" and "${dir}"`);
+      return;
+    }
+    crates.set(name, { path: dir, deps: new Set() });
+    byDir.set(dir, name);
+    manifests.push([dir, manifest]);
+  };
+  // A root [package] next to [workspace] is itself a member.
+  if (root?.['package']) addCrate('.', root);
   for (const pattern of members.filter((m): m is string => typeof m === 'string')) {
-    for (const dir of expandDirPattern(reader, pattern)) {
-      if (excludes.some((e) => e.replace(/\/+$/, '') === dir)) continue;
+    const dirs = expandDirPattern(reader, pattern);
+    if (!dirs) {
+      problems.push(`infer cargo: member pattern "${pattern.slice(0, 80)}" must stay inside the repository`);
+      continue;
+    }
+    for (const dir of dirs) {
+      if (dir === '.' || isExcluded(dir) || byDir.has(dir)) continue;
       const text = readSafe(reader, `${dir}/Cargo.toml`);
       if (text === undefined) continue;
-      const manifest = parseTomlSafe(text, `${dir}/Cargo.toml`, problems);
-      const name = manifest?.['package']?.['name'];
-      if (typeof name !== 'string') continue;
-      crates.set(name, { path: dir, deps: new Set() });
-      byDir.set(dir, name);
-      manifests.push([dir, manifest]);
+      addCrate(dir, parseTomlSafe(text, `${dir}/Cargo.toml`, problems));
     }
   }
   for (const [dir, manifest] of manifests) {
     const self = byDir.get(dir)!;
-    for (const table of ['dependencies', 'dev-dependencies', 'build-dependencies']) {
-      const deps = manifest[table];
+    // [dependencies] etc. plus target-specific tables: [target.'cfg(unix)'.dependencies]
+    const tables: any[] = [];
+    const scopes = [manifest, ...Object.values<any>(manifest['target'] && typeof manifest['target'] === 'object' ? manifest['target'] : {})];
+    for (const scope of scopes) {
+      for (const table of ['dependencies', 'dev-dependencies', 'build-dependencies']) tables.push(scope?.[table]);
+    }
+    for (const deps of tables) {
       if (!deps || typeof deps !== 'object') continue;
       for (const [key, spec] of Object.entries<any>(deps)) {
         const pkgName = typeof spec?.package === 'string' ? spec.package : key;
@@ -215,7 +286,7 @@ export function inferCargo(reader: RepoReader, problems: string[]): Inferred[] {
   return [...crates].map(([name, c]) => ({ name, path: c.path, via: 'cargo', dependsOn: [...c.deps].sort() }));
 }
 
-function resolveRel(base: string, rel: string): string | undefined {
+export function resolveRel(base: string, rel: string): string | undefined {
   const parts = base === '.' ? [] : base.split('/');
   for (const seg of rel.replace(/\\/g, '/').split('/')) {
     if (seg === '' || seg === '.') continue;
@@ -275,7 +346,7 @@ function parseTomlSafe(text: string, file: string, problems: string[]): any {
 export function parseToml(text: string): any {
   const root = obj();
   let table = root;
-  const src = text.replace(/\r\n/g, '\n');
+  const src = text.replace(/^﻿/, '').replace(/\r\n/g, '\n');
   let i = 0;
   const peek = () => src[i];
   const ws = () => { while (i < src.length && (src[i] === ' ' || src[i] === '\t')) i++; };
