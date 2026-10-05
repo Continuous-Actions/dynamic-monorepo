@@ -16,7 +16,7 @@ jobs:
       has_build: ${{ steps.plan.outputs.has_build }}
       paths: ${{ steps.plan.outputs.paths }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: Continuous-Actions/dynamic-monorepo@v1
         id: plan
   build:
@@ -28,7 +28,7 @@ jobs:
       matrix:
         project: ${{ fromJSON(needs.plan.outputs.build) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: echo "build here"
         working-directory: ${{ fromJSON(needs.plan.outputs.paths)[matrix.project] }}
 ```
@@ -54,6 +54,7 @@ jobs:
 - [README](https://github.com/Continuous-Actions/dynamic-monorepo/blob/main/README.md)
 - [Outputs](https://github.com/Continuous-Actions/dynamic-monorepo/blob/main/docs/outputs.md)
 - [Configuration](https://github.com/Continuous-Actions/dynamic-monorepo/blob/main/docs/configuration.md)
+- [Migrating from on.paths filters](https://github.com/Continuous-Actions/dynamic-monorepo/blob/main/docs/migrating-from-path-filters.md)
 - [Git comparison per event](https://github.com/Continuous-Actions/dynamic-monorepo/blob/main/docs/git.md)
 - [Agent Skill](https://github.com/Continuous-Actions/dynamic-monorepo/blob/main/skills/dynamic-monorepo/SKILL.md)
 - [Live demo repo](https://github.com/Continuous-Actions/dynamic-monorepo-demo)

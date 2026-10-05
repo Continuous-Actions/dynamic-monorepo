@@ -80,6 +80,8 @@ jobs:
 - It needs only `contents: read`, never runs code from your repository, and doesn't call the GitHub API. See [Security](#security).
 - Add a `test` or `deploy` job the same way, using the `test`/`has_test` or `deploy`/`has_deploy` outputs.
 
+**Already have one workflow per service?** Keep your reusable workflow and call it once per affected project: [docs/examples/reusable](docs/examples/reusable/workflow.yml).
+
 To see what it finds before you push, run this in your repository:
 
 ```bash
@@ -211,6 +213,8 @@ A prompt to try: *"Set up GitHub Actions for this monorepo so that only changed 
 **Pull requests, pushes, merge queues?** All of them. A pull request is compared with its base, a push with the previous commit, and a merge queue entry with its base. Manual and scheduled runs select every project unless you set `base`.
 
 **Can I use it with Nx, Turborepo, pnpm, Go workspaces or Cargo workspaces?** Yes. Detection works on any of them as-is; a config file can also read an Nx graph or workspace manifests directly. See [docs/configuration.md](docs/configuration.md).
+
+**I already have one workflow per service with `on.paths`. How do I switch?**  Follow [docs/migrating-from-path-filters.md](docs/migrating-from-path-filters.md): preview the detected projects, map each `paths` entry, and replace the per-service workflows with one workflow and one required check.
 
 **What if it picks too much or too little?** Every decision is explained in the job summary. Add a config file to override names, dependencies, targets or global files; nothing else changes.
 
