@@ -62,8 +62,9 @@ export function auditWorkflows(config: Config, reader: RepoReader): AuditFinding
       const tests = include.map((p) => compileSegments(p));
       // A folder counts as watched if any pattern matches inside it, or is rooted inside it
       // (e.g. `pkg/src/**` watches the package's sources, which is a deliberate choice).
+      const probes = (dir: string) => [`${dir}/__audit__/x`, `${dir}/x`, ...['src', 'lib', 'pkg', 'internal', 'app'].map((s) => `${dir}/${s}/__audit__/x`)];
       const covers = (dir: string) =>
-        tests.some((t) => t(`${dir}/__audit__/x`) || t(`${dir}/x`)) || include.some((p) => p.startsWith(`${dir}/`));
+        tests.some((t) => probes(dir).some((p) => t(p))) || include.some((p) => p.startsWith(`${dir}/`));
       if (include.some((p) => p === '**' || p === '**/*')) continue;
       // Projects the filter is specifically about: a pattern rooted inside the project directory.
       const listed = projects.filter((pr) => include.some((p) => p === pr.path || p.startsWith(`${pr.path}/`)));
