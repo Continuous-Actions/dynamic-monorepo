@@ -12,7 +12,7 @@ const common = {
   legalComments: 'eof',
   logLevel: 'warning',
 };
-const banner = '// dynamic-monorepo (MIT) https://github.com/OpenMind-SI/dynamic-monorepo. Generated file, do not edit.';
+const banner = '// dynamic-monorepo (MIT) https://github.com/Continuous-Actions/dynamic-monorepo. Generated file, do not edit.';
 
 await build({ ...common, entryPoints: ['src/main.ts'], outfile: 'dist/index.js', banner: { js: banner } });
 await build({ ...common, entryPoints: ['src/cli.ts'], outfile: 'dist/cli.js', banner: { js: `#!/usr/bin/env node\n${banner}` } });

@@ -17,7 +17,7 @@ jobs:
       paths: ${{ steps.plan.outputs.paths }}
     steps:
       - uses: actions/checkout@v7
-      - uses: OpenMind-SI/dynamic-monorepo@v1
+      - uses: Continuous-Actions/dynamic-monorepo@v1
         id: plan
 
   build:

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// dynamic-monorepo (MIT) https://github.com/OpenMind-SI/dynamic-monorepo. Generated file, do not edit.
+// dynamic-monorepo (MIT) https://github.com/Continuous-Actions/dynamic-monorepo. Generated file, do not edit.
 import{existsSync as Go,mkdtempSync as qo,rmSync as Wo}from"node:fs";import{tmpdir as Yo}from"node:os";import{join as On}from"node:path";import{parseArgs as Ho}from"node:util";function _n(e){let n=0,t=e.replace(/^﻿/,""),r=c=>{let u=t.slice(0,n),l=u.split(`
 `).length,f=n-u.lastIndexOf(`
 `);throw new SyntaxError(`${c} at line ${l}, column ${f}`)},i=()=>{for(;n<t.length&&` 	
