@@ -31,8 +31,11 @@ export function expandDirPattern(reader: RepoReader, pattern: string): string[] 
   for (const part of p.split('/')) {
     if (part === '..' || part.startsWith('/') || /^[A-Za-z]:$/.test(part)) return undefined;
     if (part === '.' || part === '') continue;
-    if (part === '**' && parts[parts.length - 1] === '**') continue; // "**/**" == "**"
-    parts.push(part.replace(/\*+/g, '*'));
+    if (part === '**') {
+      if (parts[parts.length - 1] !== '**') parts.push('**'); // "**/**" == "**"
+    } else {
+      parts.push(part.replace(/\*+/g, '*'));
+    }
   }
   let current = new Set<string>(['.']);
   for (const part of parts) {
