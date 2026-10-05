@@ -18,4 +18,4 @@ All notable changes to this project are documented here. The format follows
 - Per-target `exclude` (top-level and per project) for test-impact and deploy-impact planning.
 - Detection of projects that are renamed and moved at the same time, using git renames.
 - `*_batches` outputs and a `max-jobs` input for monorepos with more than 256 projects in one list.
-- CLI (`dist/cli.js`, `npx github:OpenMind-SI/dynamic-monorepos`) to preview the plan locally, including uncommitted changes.
+- CLI (`dist/cli.js`, `npx github:OpenMind-SI/dynamic-monorepo`) to preview the plan locally, including uncommitted changes.

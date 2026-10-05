@@ -27,7 +27,7 @@ jobs:
       has_deploy: ${{ steps.plan.outputs.has_deploy }}
     steps:
       - uses: actions/checkout@v7          # default fetch-depth: 1 is fine
-      - uses: OpenMind-SI/dynamic-monorepos@v1
+      - uses: OpenMind-SI/dynamic-monorepo@v1
         id: plan
 
   build:

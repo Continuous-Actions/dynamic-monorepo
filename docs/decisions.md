@@ -4,8 +4,8 @@ These are short records of *why* the action works the way it does. Research note
 
 ## Naming
 
-**Decision:** `OpenMind-SI/dynamic-monorepos`. The repository, the Action (`uses: OpenMind-SI/dynamic-monorepos@v1`) and any future npm/CLI package all use the same name. The Marketplace display name is "Dynamic Monorepos".
-**Why:** The research shortlisted `monorepo-impact` (66/80), `affected-plan`, `impact-matrix` and `monorepo-affected` ([naming.md](naming.md)). The maintainer picked `dynamic-monorepos`. On 2026-10-05 it was free on Marketplace, npm and as a GitHub user/org, and no repositories had a similar name. It names the outcome (dynamic, per-change CI for monorepos) and doesn't clash with Nx's "affected" or Terraform's "plan". Identical repo and action names keep `uses:` obvious.
+**Decision:** `OpenMind-SI/dynamic-monorepo`. The repository, the Action (`uses: OpenMind-SI/dynamic-monorepo@v1`) and any future npm/CLI package all use the same name. The Marketplace display name is "Dynamic Monorepo".
+**Why:** The research shortlisted `monorepo-impact` (66/80), `affected-plan`, `impact-matrix` and `monorepo-affected` ([naming.md](naming.md)). The maintainer picked `dynamic-monorepo`. On 2026-10-05 it was free on Marketplace, npm and as a GitHub user/org, and no repositories had a similar name. It names the outcome (dynamic, per-change CI for monorepos) and doesn't clash with Nx's "affected" or Terraform's "plan". Identical repo and action names keep `uses:` obvious.
 
 ## Organisation
 

@@ -4,7 +4,7 @@ The config file is `dynamic-monorepo.config.json` at the repository root. You ca
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/OpenMind-SI/dynamic-monorepos/v1/schema.json",
+  "$schema": "https://raw.githubusercontent.com/OpenMind-SI/dynamic-monorepo/v1/schema.json",
   "infer": ["node"],
   "projects": {
     "shared": { "path": "libs/shared" },

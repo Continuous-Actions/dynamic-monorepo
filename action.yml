@@ -1,4 +1,4 @@
-name: Dynamic Monorepos
+name: Dynamic Monorepo
 description: Map changed files to projects, walk the dependency graph, and output affected-project matrices with reasons.
 author: OpenMind-SI
 branding:

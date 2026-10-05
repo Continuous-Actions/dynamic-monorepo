@@ -1,11 +1,11 @@
-# dynamic-monorepos
+# dynamic-monorepo
 
 **Dependency-aware affected-project planning for monorepos, built for GitHub Actions.**
 
-`dynamic-monorepos` turns a git diff into the list of projects you actually need to build, test and deploy. It maps changed files to projects, walks your declared dependency graph to find everything downstream, and outputs JSON arrays ready for `strategy.matrix`. The job summary says why each project was picked.
+`dynamic-monorepo` turns a git diff into the list of projects you actually need to build, test and deploy. It maps changed files to projects, walks your declared dependency graph to find everything downstream, and outputs JSON arrays ready for `strategy.matrix`. The job summary says why each project was picked.
 
 ```yaml
-- uses: OpenMind-SI/dynamic-monorepos@v1
+- uses: OpenMind-SI/dynamic-monorepo@v1
   id: plan
 # steps.plan.outputs.build == '["shared","api","web"]'
 ```
@@ -19,7 +19,7 @@
 
 [`dorny/paths-filter`](https://github.com/dorny/paths-filter) and [`tj-actions/changed-files`](https://github.com/tj-actions/changed-files) tell you **which files changed**. Deciding **what to rebuild** is still up to you. If `libs/shared` changes, every service that imports it has to be rebuilt and retested. With path filters you end up hand-maintaining lists like `api: [services/api/**, libs/shared/**, libs/auth/**]`, and those lists go stale.
 
-`dynamic-monorepos` stores the dependency graph once and computes the reverse-transitive closure for you:
+`dynamic-monorepo` stores the dependency graph once and computes the reverse-transitive closure for you:
 
 ```
 shared ─▶ api ─▶ portal
@@ -39,7 +39,7 @@ Nx, Turborepo, Bazel, Pants and moon do this too, but only inside their own tool
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/OpenMind-SI/dynamic-monorepos/v1/schema.json",
+  "$schema": "https://raw.githubusercontent.com/OpenMind-SI/dynamic-monorepo/v1/schema.json",
   "projects": {
     "shared": { "path": "libs/shared" },
     "api":    { "path": "services/api", "dependsOn": ["shared"], "targets": ["build", "test", "deploy"] },
@@ -81,7 +81,7 @@ jobs:
       has_build: ${{ steps.plan.outputs.has_build }}
     steps:
       - uses: actions/checkout@v7
-      - uses: OpenMind-SI/dynamic-monorepos@v1
+      - uses: OpenMind-SI/dynamic-monorepo@v1
         id: plan
 
   build:
@@ -119,7 +119,7 @@ all         false   (true when a global file changed or no comparison base exist
 The log, and the job summary as a table, read like this:
 
 ```text
-dynamic-monorepos: 5 affected / 7 projects
+dynamic-monorepo: 5 affected / 7 projects
 Compared: 09594672b857..63ef87f87cae (pull request merge commit vs its base parent)
 Changed files: 1
 Directly affected (1):
@@ -184,7 +184,7 @@ Globs are relative to the repository root and support `*`, `**` and `?`. Invalid
 The same engine runs on your machine, so you can see what CI would run before you push:
 
 ```bash
-npx github:OpenMind-SI/dynamic-monorepos --base origin/main
+npx github:OpenMind-SI/dynamic-monorepo --base origin/main
 ```
 
 Other flags: `--json` (full plan with reasons), `--uncommitted` (include working-tree edits) and `--verbose`. Run `--help` for the full list.
