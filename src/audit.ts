@@ -60,7 +60,10 @@ export function auditWorkflows(config: Config, reader: RepoReader): AuditFinding
       // Only plain globs can be evaluated; skip the dependency check if any pattern is exotic.
       if (include.some((p) => validatePattern(p) !== undefined)) continue;
       const tests = include.map((p) => compileSegments(p));
-      const covers = (dir: string) => tests.some((t) => t(`${dir}/__audit__/x`) || t(`${dir}/x`));
+      // A folder counts as watched if any pattern matches inside it, or is rooted inside it
+      // (e.g. `pkg/src/**` watches the package's sources, which is a deliberate choice).
+      const covers = (dir: string) =>
+        tests.some((t) => t(`${dir}/__audit__/x`) || t(`${dir}/x`)) || include.some((p) => p.startsWith(`${dir}/`));
       if (include.some((p) => p === '**' || p === '**/*')) continue;
       // Projects the filter is specifically about: a pattern rooted inside the project directory.
       const listed = projects.filter((pr) => include.some((p) => p === pr.path || p.startsWith(`${pr.path}/`)));
