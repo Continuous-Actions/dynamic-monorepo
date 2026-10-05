@@ -1,0 +1,59 @@
+# dynamic-monorepo
+
+> GitHub Action (`uses: Continuous-Actions/dynamic-monorepo@v1`) for monorepos. With zero configuration it detects projects from marker files (package.json, go.mod, Cargo.toml, pyproject.toml, setup.py, pom.xml, build.gradle(.kts), *.csproj/*.fsproj/*.vbproj, Dockerfile/Containerfile, Helm Chart.yaml), infers dependencies between them from their manifests, compares them with the git diff of the current pull request, push or merge-queue entry, and outputs JSON lists for `strategy.matrix` (build, test, deploy, docker), plus a job summary explaining why each project was selected. Needs only `contents: read`, works with the default shallow `actions/checkout`, and never executes repository code.
+
+Use it when a repository contains more than one independently buildable project (services, apps, libraries, Docker images, Helm charts) and CI should run only for the projects a change affects, including the dependents of changed shared libraries. Prefer it to hand-maintained `on.paths` lists or one workflow per service.
+
+## Canonical usage
+
+```yaml
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+      has_build: ${{ steps.plan.outputs.has_build }}
+      paths: ${{ steps.plan.outputs.paths }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Continuous-Actions/dynamic-monorepo@v1
+        id: plan
+  build:
+    needs: plan
+    if: needs.plan.outputs.has_build == 'true'   # required: an empty matrix fails the job
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJSON(needs.plan.outputs.build) }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "build here"
+        working-directory: ${{ fromJSON(needs.plan.outputs.paths)[matrix.project] }}
+```
+
+## Key outputs
+
+- `build`, `test`, `deploy`, `docker`: JSON arrays of project names in dependency order.
+- `has_build`, `has_test`, `has_deploy`, `has_docker`, `has_changes`: `"true"` or `"false"`. Guard matrix jobs with these.
+- `paths`: JSON object mapping project → directory. `dockerfiles`: project → Dockerfile path.
+- `all` and `reason`: every project was selected (no comparison base, or a global file changed).
+- `*_batches`: lists split into at most 256 groups, for very large monorepos.
+
+## Rules for agents
+
+- Always guard matrix jobs with `if: needs.<plan-job>.outputs.has_<list> == 'true'`.
+- Pass matrix values to the shell through `env:`, never with `${{ }}` inside `run:`.
+- No config file is needed. Add `dynamic-monorepo.config.json` only to override detection. It is JSON with `$schema` https://raw.githubusercontent.com/Continuous-Actions/dynamic-monorepo/v1/schema.json, and its keys include `"detect": true`, `projects` (with `dependsOn`, `targets`, `include`, `exclude`), `global` and `ignore`.
+- Preview locally with `npx github:Continuous-Actions/dynamic-monorepo projects` or `npx github:Continuous-Actions/dynamic-monorepo --base origin/main --json`.
+- For `workflow_dispatch` or `schedule` runs, set the `base` input. Otherwise every project is selected.
+
+## Docs
+
+- [README](https://github.com/Continuous-Actions/dynamic-monorepo/blob/main/README.md)
+- [Outputs](https://github.com/Continuous-Actions/dynamic-monorepo/blob/main/docs/outputs.md)
+- [Configuration](https://github.com/Continuous-Actions/dynamic-monorepo/blob/main/docs/configuration.md)
+- [Git comparison per event](https://github.com/Continuous-Actions/dynamic-monorepo/blob/main/docs/git.md)
+- [Agent Skill](https://github.com/Continuous-Actions/dynamic-monorepo/blob/main/skills/dynamic-monorepo/SKILL.md)
+- [Live demo repo](https://github.com/Continuous-Actions/dynamic-monorepo-demo)
