@@ -94,7 +94,7 @@ jobs:
         working-directory: ${{ fromJSON(needs.plan.outputs.paths)[matrix.project] }}
 ```
 
-See [examples/](examples/) for a complete workflow with test and deploy fan-out and a required-check gate job.
+See [docs/examples/](docs/examples/) for a complete workflow with test and deploy fan-out and a required-check gate job.
 
 ## What the output looks like
 

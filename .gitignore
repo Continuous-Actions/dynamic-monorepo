@@ -3,3 +3,7 @@ coverage/
 *.log
 .tmp/
 .claude/
+.yarn/
+.pnp.*
+# Yarn is canonical (yarn.lock); npm users may install locally without committing a lockfile.
+package-lock.json
