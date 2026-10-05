@@ -223,3 +223,41 @@ describe('CLI: projects', () => {
     expect(r.stderr).toContain('unknown command "nope"');
   });
 });
+
+describe('Go modules with several binaries', () => {
+  it('splits into package projects linked by imports', () => {
+    const repo = new Repo();
+    const before = repo.commit('init', {
+      'go.mod': 'module example.com/app\n\ngo 1.23\n',
+      'go.sum': '',
+      'cmd/admin/main.go': 'package main\n\nimport (\n\t"fmt"\n\t"example.com/app/internal/auth"\n)\n\nfunc main() { fmt.Println(auth.X) }\n',
+      'cmd/chat/main.go': 'package main\n\nimport "example.com/app/internal/store"\n\nfunc main() { _ = store.Y }\n',
+      'internal/auth/auth.go': 'package auth\n\nimport "example.com/app/internal/store"\n\nvar X = store.Y\n',
+      'internal/store/store.go': '// Package store\npackage store\n\nvar Y = 1\n',
+      'internal/util/util.go': 'package util\n',
+      'deploy/admin/Dockerfile': 'FROM scratch\n',
+    });
+    const store = repo.commit('store', { 'internal/store/store.go': 'package store\n\nvar Y = 2\n' });
+    const r = runAction(repo, { event: 'push', payload: { ref: 'refs/heads/main', before, after: store, repository: { default_branch: 'main' } } });
+    expect(r.code).toBe(0);
+    expect(r.json('affected')).toEqual(['internal/store', 'cmd/chat', 'internal/auth', 'cmd/admin']);
+    expect(r.json('build')).toEqual(['cmd/chat', 'cmd/admin']);
+    expect(r.json('test')).toEqual(['internal/store', 'cmd/chat', 'internal/auth', 'cmd/admin']);
+
+    const util = repo.commit('util', { 'internal/util/util.go': 'package util\n\nvar Z = 1\n' });
+    const r2 = runAction(repo, { event: 'push', payload: { ref: 'refs/heads/main', before: store, after: util, repository: { default_branch: 'main' } } });
+    expect(r2.json('affected')).toEqual(['internal/util']);
+    expect(r2.json('build')).toEqual([]);
+
+    const bump = repo.commit('bump', { 'go.sum': 'example.com/x v1.0.0 h1:abc\n' });
+    const r3 = runAction(repo, { event: 'push', payload: { ref: 'refs/heads/main', before: util, after: bump, repository: { default_branch: 'main' } } });
+    expect(r3.json('build')).toEqual(['cmd/chat', 'cmd/admin']);
+  });
+
+  it('keeps a single-binary module as one project', () => {
+    const repo = new Repo();
+    repo.commit('init', { 'svc/go.mod': 'module example.com/svc\n', 'svc/main.go': 'package main\nfunc main(){}\n', 'svc/lib/lib.go': 'package lib\n' });
+    const r = runAction(repo);
+    expect(r.json('build')).toEqual(['svc']);
+  });
+});
