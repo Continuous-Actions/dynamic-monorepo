@@ -29,6 +29,9 @@ inputs:
   max-jobs:
     description: Maximum entries in each *_batches output (GitHub allows 256 jobs per matrix).
     default: '256'
+  audit:
+    description: 'Check every workflow on.*.paths list against the dependency graph: off, warn (annotations and summary) or fail (also fails the step).'
+    default: 'off'
   working-directory:
     description: Directory inside the repository to run in.
     default: '.'
@@ -84,6 +87,8 @@ outputs:
     description: Base commit SHA that was compared (empty when no diff was possible).
   head:
     description: Head commit SHA that was compared.
+  audit_findings:
+    description: Number of path-filter problems found when the audit input is warn or fail.
   plan_file:
     description: Path to a JSON file with the full plan, including per-project reasons.
 

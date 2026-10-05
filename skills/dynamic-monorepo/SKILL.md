@@ -60,6 +60,8 @@ jobs:
 4. **Correct detection only if needed.** Add `dynamic-monorepo.config.json` at the repository root with `"detect": true`. Override projects under `projects` (`dependsOn`, `targets`, `include`, `exclude`), and use `global` or `ignore` globs for files that should select every project or none. Schema: https://raw.githubusercontent.com/Continuous-Actions/dynamic-monorepo/v1/schema.json
 5. **Verify on a branch.** `npx github:Continuous-Actions/dynamic-monorepo --base origin/main` shows what CI will run and why.
 
+If the user wants to keep their existing `on.paths` workflows, add the action as a check instead with `with: { audit: warn }` (or `fail`); it reports `paths:` lists that miss a dependency's folder. Locally: `npx github:Continuous-Actions/dynamic-monorepo audit`.
+
 Notes:
 - It works with the default shallow checkout.
 - It needs only `contents: read`.

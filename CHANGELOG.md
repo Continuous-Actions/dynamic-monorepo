@@ -3,6 +3,14 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses semantic versioning.
 
+## [1.2.0] - 2026-10-05
+
+### Added
+- `audit` input (`off` / `warn` / `fail`) and `audit` CLI command: checks every workflow's `on.*.paths` list against the dependency graph and reports missing dependency folders, directories without `/**`, and references to deleted workflow files, as annotations and in the job summary. New output: `audit_findings`.
+
+### Fixed
+- `projects` CLI command no longer fails on dependency cycles that come from manifests.
+
 ## [1.1.0] - 2026-10-05
 
 ### Added

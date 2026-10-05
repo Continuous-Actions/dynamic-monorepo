@@ -7,7 +7,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { ConfigError, TARGETS } from './config.ts';
-import { execute, loadConfig, type LoadedConfig } from './engine.ts';
+import { execute, fsReader, loadConfig, type LoadedConfig } from './engine.ts';
+import { auditWorkflows } from './audit.ts';
 import { Git, GitError } from './git.ts';
 import { CycleError, Graph } from './graph.ts';
 import { CONFIG_FILE, detectionLines, NAME, serialize, textReport } from './report.ts';
@@ -17,6 +18,7 @@ const HELP = `${NAME} — preview which monorepo projects a change affects
 Usage:
   ${NAME} [options]             What CI would build, test, deploy and docker-build for your changes
   ${NAME} projects [options]    List every project, its folder, targets and dependencies
+  ${NAME} audit [options]       Check workflow on.*.paths filters against the dependency graph
 
 Options:
   --base <ref>       Compare against the merge-base with this ref
@@ -49,7 +51,7 @@ export function cli(argv: string[]): number {
     });
     args = parsed.values;
     command = parsed.positionals.join(' ') || undefined;
-    if (command !== undefined && command !== 'projects') throw new Error(`unknown command "${command}" (the only command is "projects")`);
+    if (command !== undefined && command !== 'projects' && command !== 'audit') throw new Error(`unknown command "${command}" (commands: projects, audit)`);
   } catch (err) {
     process.stderr.write(`${(err as Error).message}\n\n${HELP}`);
     return 2;
@@ -60,6 +62,7 @@ export function cli(argv: string[]): number {
   }
   try {
     if (command === 'projects') return listProjects(loadConfig(args.cwd, args.config), args.json);
+    if (command === 'audit') return runAudit(loadConfig(args.cwd, args.config), args.json);
     const git = new Git(args.cwd);
     const base = args.base ?? defaultBase(git);
     let head = args.head;
@@ -79,9 +82,18 @@ export function cli(argv: string[]): number {
   }
 }
 
+/** Checks every workflow's on.*.paths list against the dependency graph. Exit 1 when something is wrong. */
+function runAudit({ git, top, config }: LoadedConfig, asJson: boolean): number {
+  const findings = auditWorkflows(config, fsReader(top, git));
+  if (asJson) process.stdout.write(`${JSON.stringify(findings, null, 2)}\n`);
+  else if (findings.length === 0) process.stdout.write('No path-filter problems found.\n');
+  else for (const f of findings) process.stdout.write(`${f.file}:${f.line}: ${f.message}\n`);
+  return findings.length === 0 ? 0 : 1;
+}
+
 /** Prints every project in dependency order, plus how they were found and likely mistakes. */
 function listProjects({ config, configRel, noConfigFile, top }: LoadedConfig, asJson: boolean): number {
-  const graph = new Graph(config.projects.values()); // throws CycleError
+  const graph = new Graph(config.projects.values(), { allowCycles: true });
   const projects = [...config.projects.values()].sort((a, b) => graph.rank.get(a.name)! - graph.rank.get(b.name)!);
   if (asJson) {
     const out = projects.map((p) => ({ name: p.name, path: p.path, targets: p.targets, dependsOn: p.dependsOn, source: p.source, dockerfile: p.dockerfile ?? null }));

@@ -6,6 +6,7 @@ import { performance } from 'node:perf_hooks';
 import { appendSummary, command, getBoolean, getInput, group, info, setOutput } from './actions.ts';
 import { ConfigError, TARGETS } from './config.ts';
 import { execute } from './engine.ts';
+import { auditWorkflows, type AuditFinding } from './audit.ts';
 import { GitError } from './git.ts';
 import { CycleError } from './graph.ts';
 import type { Plan } from './plan.ts';
@@ -22,7 +23,9 @@ export function run(): number {
     const maxJobs = /^[0-9]{1,3}$/.test(maxJobsInput) ? Number(maxJobsInput) : NaN;
     if (!(maxJobs >= 1 && maxJobs <= MATRIX_LIMIT)) throw new Error(`input "max-jobs" must be an integer from 1 to ${MATRIX_LIMIT}`);
 
-    const { plan, range, warnings, notes } = execute({
+    const auditMode = getInput('audit', 'off').toLowerCase();
+    if (!['off', 'warn', 'fail'].includes(auditMode)) throw new Error('input "audit" must be off, warn or fail');
+    const { plan, range, warnings, notes, head, reader } = execute({
       cwd,
       config: getInput('config', CONFIG_FILE),
       fetch: getBoolean('fetch', true),
@@ -45,7 +48,15 @@ export function run(): number {
     }
     info(textReport(plan, range, verbose, notes));
     if (verbose) group('Plan JSON', () => info(JSON.stringify(serialize(plan), null, 2)));
-    if (getBoolean('summary', true)) appendSummary(markdownReport(plan, range, notes));
+    let findings: AuditFinding[] = [];
+    if (auditMode !== 'off') {
+      findings = auditWorkflows(head, reader);
+      for (const f of findings) command(auditMode === 'fail' ? 'error' : 'warning', f.message, { title: `${NAME}: path filter`, file: f.file, line: String(f.line) });
+      setOutput('audit_findings', String(findings.length));
+      info(findings.length ? `Path-filter audit: ${findings.length} problem(s) found.` : 'Path-filter audit: no problems found.');
+    }
+    if (getBoolean('summary', true)) appendSummary(markdownReport(plan, range, notes) + auditMarkdown(findings, auditMode));
+    if (auditMode === 'fail' && findings.length > 0) return 1;
     info(`Completed in ${Math.round(performance.now() - t0)} ms`);
     return 0;
   } catch (err) {
@@ -107,6 +118,14 @@ function writeOutputs(p: Plan, base: string, head: string, maxJobs: number): voi
     writeFileSync(file, JSON.stringify(serialize(p), null, 2));
     setOutput('plan_file', file);
   }
+}
+
+function auditMarkdown(findings: AuditFinding[], mode: string): string {
+  if (mode === 'off') return '';
+  if (findings.length === 0) return '\n### Path-filter audit\n\nNo problems found: every workflow `paths:` list covers the dependencies of the projects it builds.\n';
+  const esc = (s: string) => s.replace(/[|<>]/g, (c) => `&#${c.charCodeAt(0)};`).replace(/[\r\n]+/g, ' ');
+  const rows = findings.map((f) => `| \`${f.file}:${f.line}\` | ${esc(f.message)} |`).join('\n');
+  return `\n### Path-filter audit (${findings.length})\n\n| Workflow | Problem |\n| --- | --- |\n${rows}\n`;
 }
 
 process.exitCode = run();

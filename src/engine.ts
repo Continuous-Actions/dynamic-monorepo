@@ -20,7 +20,7 @@ export type EngineInput = {
 /** noConfigFile: there is no config file and projects come from auto-detection alone. */
 export type LoadedConfig = { git: Git; top: string; configRel: string; config: Config; noConfigFile: boolean };
 
-export type EngineResult = { plan: Plan; range: Range; warnings: string[]; notes: string[] };
+export type EngineResult = { plan: Plan; range: Range; warnings: string[]; notes: string[]; head: Config; reader: RepoReader };
 
 /** The configuration used when the default config file does not exist. */
 const AUTO = { detect: true };
@@ -78,7 +78,7 @@ export function execute(input: EngineInput): EngineResult {
     base = baseConfig(git, range.base, configRel, input.config === CONFIG_FILE, input.log);
   }
   const result = plan({ head, base, configPath: configRel, changes, forceAll: range.kind === 'all' ? range.why : undefined });
-  return { plan: result, range, warnings, notes: detectionLines(head.detection, noConfigFile) };
+  return { plan: result, range, warnings, notes: detectionLines(head.detection, noConfigFile), head, reader: gitReader(git, headRev) };
 }
 
 /**

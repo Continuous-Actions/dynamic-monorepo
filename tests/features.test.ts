@@ -228,6 +228,41 @@ describe('matrix batches', () => {
   });
 });
 
+describe('path-filter audit', () => {
+  const wf = (paths: string) => `name: web\non:\n  pull_request:\n    paths:\n${paths}\njobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n`;
+  function auditRepo() {
+    const repo = new Repo();
+    repo.commit('init', {
+      'package.json': JSON.stringify({ private: true, workspaces: ['packages/*', 'apps/*'] }),
+      'packages/shared/package.json': '{"name":"shared"}',
+      'packages/ui/package.json': JSON.stringify({ name: 'ui', dependencies: { shared: '*' } }),
+      'apps/web/package.json': JSON.stringify({ name: 'web', dependencies: { ui: '*' } }),
+      '.github/workflows/web.yml': wf("      - 'apps/web/**'\n      - 'packages/ui/**'\n      - '.github/workflows/old-web.yml'"),
+      '.github/workflows/ui.yml': wf("      - 'packages/ui'\n      - 'packages/shared/**'"),
+    });
+    return repo;
+  }
+
+  it('reports missing transitive dependencies, directories without globs and stale workflow references', () => {
+    const repo = auditRepo();
+    const r = runAction(repo, { inputs: { audit: 'warn' } });
+    expect(r.code).toBe(0);
+    expect(r.outputs['audit_findings']).toBe('3');
+    expect(r.stdout).toMatch(/::warning [^\n]*file=.github\/workflows\/web.yml,line=\d+::`packages\/shared\/\*\*` is missing from on.pull_request.paths/);
+    expect(r.stdout).toMatch(/old-web.yml.*no longer exists/);
+    expect(r.stdout).toMatch(/packages\/ui. is a directory/);
+    expect(r.summary).toContain('Path-filter audit (3)');
+  });
+
+  it('fail mode fails the step; the CLI exits 1', () => {
+    const repo = auditRepo();
+    expect(runAction(repo, { inputs: { audit: 'fail' } }).code).toBe(1);
+    const cli = spawnSync(process.execPath, [resolve(import.meta.dirname, '..', 'dist', 'cli.js'), 'audit'], { cwd: repo.dir, encoding: 'utf8' });
+    expect(cli.status).toBe(1);
+    expect(cli.stdout).toMatch(/web.yml:\d+: `packages\/shared\/\*\*` is missing/);
+  });
+});
+
 describe('CLI', () => {
   const CLI = resolve(import.meta.dirname, '..', 'dist', 'cli.js');
   const cli = (cwd: string, ...args: string[]) => spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: 'utf8' });

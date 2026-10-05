@@ -89,6 +89,33 @@ npx github:Continuous-Actions/dynamic-monorepo projects            # every proje
 npx github:Continuous-Actions/dynamic-monorepo --base origin/main  # what CI would run for your branch
 ```
 
+## Already using `on.paths`? Audit it
+
+You don't have to change how your CI is triggered to get value. Add one step and it checks every workflow's `paths:` list against your real dependency graph:
+
+```yaml
+name: Path filter audit
+on: pull_request
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Continuous-Actions/dynamic-monorepo@v1
+        with:
+          audit: warn   # or "fail" to block the PR
+```
+
+It annotates the workflow file and lists in the job summary:
+
+- a package a workflow builds depends on (directly or transitively), but its folder isn't in `paths:`, so a change there silently skips that workflow
+- a directory listed without `/**`, which matches nothing inside it
+- a `.github/workflows/...` entry that no longer exists
+
+Run it locally with `npx github:Continuous-Actions/dynamic-monorepo audit`. On a sample of active public monorepos, about a third had at least one of these problems.
+
 ## What it detects
 
 A **project** is a folder that contains one of these files. A changed file belongs to the closest project folder above it.
@@ -241,6 +268,7 @@ Report vulnerabilities privately: [SECURITY.md](SECURITY.md).
 | `fetch` | `true` | Fetch missing commits by SHA in shallow clones. |
 | `summary` | `true` | Write the job summary. |
 | `verbose` | `false` | List skipped projects, unowned files, git commands and the full plan. |
+| `audit` | `off` | `warn` or `fail`: check every workflow's `on.*.paths` list against the dependency graph. |
 | `max-jobs` | `256` | Maximum entries in each `*_batches` output. |
 | `working-directory` | `.` | Directory of the repository to analyse. |
 

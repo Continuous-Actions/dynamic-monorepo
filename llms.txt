@@ -33,6 +33,10 @@ jobs:
         working-directory: ${{ fromJSON(needs.plan.outputs.paths)[matrix.project] }}
 ```
 
+## Path-filter audit
+
+Repositories that keep `on.paths` filters can add the action with `audit: warn` (or `fail`) to find workflows whose `paths:` miss a dependency's folder, directories listed without `/**`, and references to deleted workflow files. CLI: `npx github:Continuous-Actions/dynamic-monorepo audit`.
+
 ## Key outputs
 
 - `build`, `test`, `deploy`, `docker`: JSON arrays of project names in dependency order.
