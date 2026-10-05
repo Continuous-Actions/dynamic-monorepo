@@ -139,6 +139,11 @@ export function detect(reader: RepoReader, validName: (name: string) => boolean,
     if (m?.package && typeof m.package === 'object') cargoManifests.set(dir, m);
     else drop(dir, 'cargo', `${dir === '.' ? '' : `${dir}/`}Cargo.toml has no [package] (workspace root), so it is not a project itself`);
   }
+  // 2b. Go modules that build several binaries (several `package main` dirs under one go.mod)
+  //     are split into one project per package, linked by the module's own imports, so a
+  //     change to internal/foo selects only the binaries that (transitively) import it.
+  const goPkgs = splitGoModules(dirs, files, reader, notes);
+
   if (dirs.size > DETECT_LIMITS.projects) {
     problems.push(`detect: found more than ${DETECT_LIMITS.projects} projects; set "detect": false and list projects under "projects"`);
     return { projects: [], lockfiles: [], notes };
@@ -229,6 +234,7 @@ export function detect(reader: RepoReader, validName: (name: string) => boolean,
         }
       }
     }
+    for (const imp of goPkgs.get(dir)?.imports ?? []) link(dir, imp);
     for (const proj of d.markers.filter((m) => /\.(cs|fs|vb)proj$/.test(m))) {
       for (const m of (text.get(proj) ?? '').matchAll(/<ProjectReference\s+Include\s*=\s*"([^"]+)"/g)) {
         const target = resolveRel(dir, m[1]!.replace(/\\/g, '/'));
@@ -245,7 +251,10 @@ export function detect(reader: RepoReader, validName: (name: string) => boolean,
   for (const [dir, d] of [...dirs].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
     const kinds = DETECT_KINDS.filter((k) => d.kinds.has(k));
     const container = d.kinds.has('docker') || d.kinds.has('helm');
-    const targets: Target[] = ['build', 'test', ...(container ? (['deploy'] as const) : []), ...(d.kinds.has('docker') ? (['docker'] as const) : [])];
+    const goPkg = goPkgs.get(dir);
+    // Go library packages are tested, not built; binaries (package main) are built and tested.
+    const base: Target[] = goPkg && !goPkg.main && d.kinds.size === 1 ? ['test'] : ['build', 'test'];
+    const targets: Target[] = [...base, ...(container ? (['deploy'] as const) : []), ...(d.kinds.has('docker') ? (['docker'] as const) : [])];
     const dockerfiles = d.markers.filter((m) => markerKind(m.slice(m.lastIndexOf('/') + 1)) === 'docker').sort();
     const prefer = (base: string) => dockerfiles.find((f) => f === (dir === '.' ? base : `${dir}/${base}`));
     projects.push({
@@ -253,7 +262,7 @@ export function detect(reader: RepoReader, validName: (name: string) => boolean,
       path: dir,
       dependsOn: [...edges.get(dir)!].map((x) => nameOf.get(x)!).sort(),
       targets,
-      include: lockfiles.filter((l) => d.kinds.has(l.kind) && dir !== '.').map((l) => l.file),
+      include: [...lockfiles.filter((l) => d.kinds.has(l.kind) && dir !== '.').map((l) => l.file), ...(goPkg?.include ?? [])],
       kinds,
       dockerfile: prefer('Dockerfile') ?? prefer('Containerfile') ?? dockerfiles[0],
     });
@@ -267,4 +276,95 @@ export function detectionSummary(d: Detection): string {
   for (const p of d.projects) for (const k of p.kinds) counts.set(k, (counts.get(k) ?? 0) + 1);
   const parts = [...counts].sort((a, b) => b[1] - a[1] || DETECT_KINDS.indexOf(a[0]) - DETECT_KINDS.indexOf(b[0])).map(([k, n]) => `${n} ${k}`);
   return `${d.projects.length} project${d.projects.length === 1 ? '' : 's'}${parts.length ? `: ${parts.join(', ')}` : ''}`;
+}
+
+type GoPackage = { module: string; main: boolean; imports: Set<string>; include: string[] };
+
+const GO_LIMITS = { filesPerModule: 20_000 };
+
+/**
+ * Splits Go modules that contain two or more `package main` directories into one
+ * project per package directory. Each package depends on the module packages it
+ * imports, and every package includes its module's go.mod/go.sum (a dependency bump
+ * affects them all). Modules with a single binary keep the module-level project.
+ * Mutates `dirs`; returns package info keyed by directory.
+ */
+function splitGoModules(
+  dirs: Map<string, { kinds: Set<DetectKind>; markers: string[] }>,
+  files: string[],
+  reader: RepoReader,
+  notes: string[],
+): Map<string, GoPackage> {
+  const out = new Map<string, GoPackage>();
+  const moduleDirs = [...dirs].filter(([, d]) => d.kinds.has('go')).map(([dir]) => dir);
+  if (moduleDirs.length === 0) return out;
+  const within = (dir: string, file: string) => dir === '.' || file.startsWith(`${dir}/`);
+  // The module a file belongs to is the deepest module directory containing it.
+  const ownerModule = (file: string) => {
+    let best: string | undefined;
+    for (const m of moduleDirs) if (within(m, file) && (best === undefined || m.length > best.length)) best = m;
+    return best;
+  };
+  const goFiles = new Map<string, string[]>(); // module dir -> .go files
+  for (const f of files) {
+    if (!f.endsWith('.go') || skipped(f)) continue;
+    const m = ownerModule(f);
+    if (m === undefined) continue;
+    const list = goFiles.get(m) ?? [];
+    list.push(f);
+    goFiles.set(m, list);
+  }
+  for (const moduleDir of moduleDirs) {
+    const list = goFiles.get(moduleDir) ?? [];
+    if (list.length === 0) continue;
+    if (list.length > GO_LIMITS.filesPerModule) {
+      notes.push(`Go module "${moduleDir}" has more than ${GO_LIMITS.filesPerModule} .go files; it is treated as one project`);
+      continue;
+    }
+    const gomod = reader.readMany([moduleDir === '.' ? 'go.mod' : `${moduleDir}/go.mod`]);
+    const modPath = /^\s*module\s+(\S+)/m.exec(stripGoComments([...gomod.values()][0] ?? ''))?.[1]?.replace(/^"|"$/g, '');
+    if (!modPath) continue;
+    const sources = reader.readMany(list);
+    const pkgs = new Map<string, { main: boolean; imports: Set<string> }>();
+    for (const file of list) {
+      const src = sources.get(file);
+      if (src === undefined) continue;
+      const dir = dirOf(file);
+      const pkg = pkgs.get(dir) ?? { main: false, imports: new Set<string>() };
+      const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+      if (!file.endsWith('_test.go') && /^\s*package\s+main\b/m.test(code)) pkg.main = true;
+      for (const spec of goImports(code)) {
+        if (spec !== modPath && !spec.startsWith(`${modPath}/`)) continue;
+        const rel = spec === modPath ? '' : spec.slice(modPath.length + 1);
+        pkg.imports.add(rel === '' ? moduleDir : moduleDir === '.' ? rel : `${moduleDir}/${rel}`);
+      }
+      pkgs.set(dir, pkg);
+    }
+    const mains = [...pkgs.values()].filter((p) => p.main).length;
+    if (mains < 2) continue;
+    const include = [moduleDir === '.' ? 'go.mod' : `${moduleDir}/go.mod`, moduleDir === '.' ? 'go.sum' : `${moduleDir}/go.sum`];
+    // Replace the module-level project with package-level projects.
+    const modEntry = dirs.get(moduleDir)!;
+    modEntry.kinds.delete('go');
+    if (modEntry.kinds.size === 0 && !pkgs.has(moduleDir)) dirs.delete(moduleDir);
+    for (const [dir, p] of pkgs) {
+      const entry = dirs.get(dir) ?? { kinds: new Set<DetectKind>(), markers: [] };
+      entry.kinds.add('go');
+      dirs.set(dir, entry);
+      p.imports.delete(dir);
+      out.set(dir, { module: moduleDir, main: p.main, imports: new Set([...p.imports].filter((i) => pkgs.has(i))), include });
+    }
+    notes.push(`Go module "${modPath}" builds ${mains} binaries, so it was split into ${pkgs.size} package projects linked by their imports (binaries: build, test; libraries: test)`);
+  }
+  return out;
+}
+
+/** Import paths from Go source (comments already stripped). */
+function goImports(code: string): string[] {
+  const out: string[] = [];
+  for (const m of code.matchAll(/^\s*import\s*\(([\s\S]*?)\)/gm)) {
+    for (const s of m[1]!.matchAll(/"([^"]+)"/g)) out.push(s[1]!);
+  }
+  for (const m of code.matchAll(/^\s*import\s+(?:[\w.]+\s+)?"([^"]+)"/gm)) out.push(m[1]!);
+  return out;
 }
