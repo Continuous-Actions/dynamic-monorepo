@@ -15,9 +15,9 @@
 - Needs only `contents: read`. It runs no commands from your repository and never uses the GitHub API.
 - Deterministic: the same inputs always give the same output, in dependency order.
 
-## Why not `paths-filter`?
+## Why dynamic-monorepo?
 
-[`dorny/paths-filter`](https://github.com/dorny/paths-filter) and [`tj-actions/changed-files`](https://github.com/tj-actions/changed-files) tell you **which files changed**. Deciding **what to rebuild** is still up to you. If `libs/shared` changes, every service that imports it has to be rebuilt and retested. With path filters you end up hand-maintaining lists like `api: [services/api/**, libs/shared/**, libs/auth/**]`, and those lists go stale.
+Knowing **which files changed** is only half the answer. In a monorepo you also need to know **what to rebuild**: if `libs/shared` changes, every service that depends on it has to be rebuilt and retested too.
 
 `dynamic-monorepo` stores the dependency graph once and computes the reverse-transitive closure for you:
 
@@ -31,7 +31,7 @@ shared ─▶ api ─▶ portal
 | `services/api/**` | `api` | `api`, `portal` |
 | `apps/portal/**` | `portal` | `portal` |
 
-Nx, Turborepo, Bazel, Pants and moon do this too, but only inside their own toolchains, and none of them outputs a ready-made Actions matrix. See [docs/research.md](docs/research.md) for the full comparison.
+You declare the graph once, or let the action infer it from your workspace manifests, and every run produces build, test and deploy lists that drop straight into a matrix.
 
 ## Quick start
 
