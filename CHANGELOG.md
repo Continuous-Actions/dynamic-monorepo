@@ -3,6 +3,17 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses semantic versioning.
 
+## [1.1.0] - 2026-10-05
+
+### Added
+- Go: a module that builds several binaries (`cmd/*`) is split into one project per package, linked by its own imports. A change to `internal/foo` selects only the binaries that import it.
+- Maven: modules depend on their parent pom and on sibling artifacts. Aggregator poms (`packaging pom`) build nothing.
+- Gradle: `project(':a:b')` references create dependency edges.
+- Docs: a recipe for calling an existing reusable workflow once per affected project, and a guide for migrating from `on.paths` filters.
+
+### Fixed
+- Go external test packages (`package foo_test`) no longer create false dependency cycles.
+
 ## [1.0.0] - 2026-10-05
 
 First public release.
