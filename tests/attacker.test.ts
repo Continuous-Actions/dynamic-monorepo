@@ -248,3 +248,25 @@ describe('auto-detection safety (merged with zero-config)', () => {
     expect(r.json('affected')).toEqual(['ok']);
   });
 });
+
+describe('PR #5 review follow-ups', () => {
+  it('duplicate package names do not create edges to an arbitrary folder', () => {
+    const repo = new Repo();
+    const before = repo.commit('init', {
+      'a/package.json': '{"name":"dup"}',
+      'b/package.json': '{"name":"dup"}',
+      'app/package.json': JSON.stringify({ name: 'app', dependencies: { dup: '*' } }),
+    });
+    const after = repo.commit('edit', { 'b/x.js': '1' });
+    const r = push(repo, before, after);
+    expect(r.json('affected')).toEqual(['b']); // no guessed edge app -> b
+    expect(r.stdout).toMatch(/package name "dup" is used by more than one folder/);
+  });
+
+  it('marker files under skipped folders are reported, not silently dropped', () => {
+    const repo = new Repo();
+    repo.commit('init', { 'svc/package.json': '{"name":"svc"}', 'build/docker/Dockerfile': 'FROM scratch' });
+    const r = runAction(repo);
+    expect(r.stdout).toMatch(/1 marker file\(s\) inside skipped folders .*build\/docker\/Dockerfile/);
+  });
+});

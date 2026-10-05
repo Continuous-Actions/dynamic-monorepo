@@ -92,15 +92,24 @@ export function detect(reader: RepoReader, validName: (name: string) => boolean,
 
   // 1. Directories with markers.
   const dirs = new Map<string, { kinds: Set<DetectKind>; markers: string[] }>();
+  const skippedMarkers: string[] = [];
   for (const file of files) {
     const base = file.slice(file.lastIndexOf('/') + 1);
     const kind = markerKind(base);
-    if (!kind || skipped(file)) continue;
+    if (!kind) continue;
+    if (skipped(file)) {
+      if (!file.split('/').includes('node_modules')) skippedMarkers.push(file);
+      continue;
+    }
     const dir = dirOf(file);
     const d = dirs.get(dir) ?? { kinds: new Set(), markers: [] };
     d.kinds.add(kind);
     d.markers.push(file);
     dirs.set(dir, d);
+  }
+
+  if (skippedMarkers.length > 0) {
+    notes.push(`${skippedMarkers.length} marker file(s) inside skipped folders (${[...SKIP_DIRS].slice(0, 4).join(', ')}, …, dot-folders) were ignored, e.g. "${skippedMarkers.sort()[0]}"; declare such projects under "projects" to include them`);
   }
 
   // 2. Read the manifests that carry names or dependencies (one git process).
@@ -168,16 +177,25 @@ export function detect(reader: RepoReader, validName: (name: string) => boolean,
     if (toDir !== undefined && toDir !== from && dirs.has(toDir)) edges.get(from)!.add(toDir);
   };
   const nodeByName = new Map<string, string>();
+  const ambiguous = new Set<string>();
   const goByModule = new Map<string, string>();
   for (const [dir, d] of dirs) {
     if (d.kinds.has('node')) {
       const n = json(at(dir, 'package.json'))?.name;
-      if (typeof n === 'string') nodeByName.set(n, dir);
+      if (typeof n === 'string') {
+        if (nodeByName.has(n) && nodeByName.get(n) !== dir) ambiguous.add(n);
+        else nodeByName.set(n, dir);
+      }
     }
     if (d.kinds.has('go')) {
       const mod = /^\s*module\s+(\S+)/m.exec(stripGoComments(at(dir, 'go.mod') ?? ''))?.[1]?.replace(/^"|"$/g, '');
       if (mod) goByModule.set(mod, dir);
     }
+  }
+  // A package name used by two folders can't be resolved to one project: drop those edges and say so.
+  for (const n of [...ambiguous].sort()) {
+    nodeByName.delete(n);
+    notes.push(`package name "${n}" is used by more than one folder; dependencies on it are ignored (rename one, or declare the edge with "dependsOn")`);
   }
   const rootCargo = cargoManifests.get('.') ?? toml(text.get('Cargo.toml'));
   const wsDeps: Record<string, any> = rootCargo?.workspace?.dependencies ?? {};
