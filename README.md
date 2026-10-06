@@ -107,8 +107,8 @@ jobs:
 To see what it finds before you push, run this in your repository:
 
 ```bash
-npx github:continuous-actions/dynamic-monorepo projects            # every project, its folder, targets and dependencies
-npx github:continuous-actions/dynamic-monorepo --base origin/main  # what CI would run for your branch
+npx dynamic-monorepo projects            # every project, its folder, targets and dependencies
+npx dynamic-monorepo --base origin/main  # what CI would run for your branch
 ```
 
 ## Already using `on.paths`? Audit it
@@ -136,9 +136,9 @@ It annotates the workflow file and lists in the job summary:
 - a directory listed without `/**`, which matches nothing inside it
 - a `.github/workflows/...` entry that no longer exists
 
-Run it locally with `npx github:continuous-actions/dynamic-monorepo audit`. On a sample of active public monorepos, about a third had at least one of these problems.
+Run it locally with `npx dynamic-monorepo audit`. On a sample of active public monorepos, about a third had at least one of these problems.
 
-**Prefer not to add an action?** `npx github:continuous-actions/dynamic-monorepo audit --fix` writes the missing folders into those `paths:` lists and adds `/**` to bare directories, then you commit the diff. It edits only the `paths` lists and keeps your comments and quoting. A list it can't edit safely (YAML anchors, multi-line entries) is reported instead, along with stale workflow references, which need a human.
+**Prefer not to add an action?** `npx dynamic-monorepo audit --fix` writes the missing folders into those `paths:` lists and adds `/**` to bare directories, then you commit the diff. It edits only the `paths` lists and keeps your comments and quoting. A list it can't edit safely (YAML anchors, multi-line entries) is reported instead, along with stale workflow references, which need a human.
 
 ## What it detects
 
@@ -218,7 +218,7 @@ The full reference, including per-target exclusions such as "test-only changes d
 
 **The build job was skipped, or failed with "Matrix vector 'project' does not contain any values".** Nothing that job builds was affected. Keep the `if: needs.plan.outputs.has_build == 'true'` line, and read the plan job's summary to see what was compared.
 
-**A project is missing, or has an odd name.** Run `npx github:continuous-actions/dynamic-monorepo projects`. Check that its marker file is committed and not inside a skipped folder (see [What it detects](#what-it-detects)). To add or rename a project, use a config file with `"detect": true` and an entry under `projects`.
+**A project is missing, or has an odd name.** Run `npx dynamic-monorepo projects`. Check that its marker file is committed and not inside a skipped folder (see [What it detects](#what-it-detects)). To add or rename a project, use a config file with `"detect": true` and an entry under `projects`.
 
 **A change didn't select the project I expected.** The file is probably outside every project folder. Run with `verbose: true` to list such files. Add the file to that project's `include`, or to `global`.
 
