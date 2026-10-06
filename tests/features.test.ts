@@ -286,7 +286,7 @@ describe('path-filter audit', () => {
 
     it('keeps flow lists, plain scalars and CRLF line endings', () => {
       const repo = auditRepo();
-      const flow = 'name: web\r\non:\r\n  push:\r\n    paths: [apps/web/**, packages/ui/**]  # keep\r\njobs:\r\n  t:\r\n    runs-on: ubuntu-latest\r\n    steps:\r\n      - run: echo hi\r\n';
+      const flow = 'name: web\r\non:\r\n  push:\r\n    paths: [apps/web/**, packages/ui/**]  # keep [x]\r\njobs:\r\n  t:\r\n    runs-on: ubuntu-latest\r\n    steps:\r\n      - run: echo hi\r\n';
       repo.write({ '.github/workflows/web.yml': flow, '.github/workflows/ui.yml': null });
       expect(run(repo.dir).status).toBe(0);
       expect(read(repo, '.github/workflows/web.yml')).toBe(flow.replace('packages/ui/**]', 'packages/ui/**, packages/shared/**]'));

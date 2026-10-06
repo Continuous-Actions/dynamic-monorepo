@@ -59,7 +59,7 @@ function fixOne(text: string, fix: Fix): string | undefined {
   if (at.kind === 'flow') {
     const line = lines[at.line]!;
     const open = line.indexOf('[', at.col);
-    const close = line.lastIndexOf(']');
+    const close = line.replace(/\s+#[^'"]*$/, '').lastIndexOf(']'); // ignore a `]` in a trailing comment
     if (open < 0 || close < open) return undefined;
     const inner = line.slice(open + 1, close);
     const style = styleOf(inner.trim());
