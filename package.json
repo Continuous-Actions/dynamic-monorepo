@@ -1,5 +1,5 @@
 {
-  "name": "@continuous-actions/dynamic-monorepoo",
+  "name": "@continuous-actions/dynamic-monorepo",
   "version": "1.4.1",
   "description": "Dependency-aware affected-project planning for monorepos in GitHub Actions",
   "license": "MIT",
@@ -29,9 +29,7 @@
     "vitest": "5.0.3"
   },
   "packageManager": "yarn@4.18.1",
-  "bin": {
-    "dynamic-monorepo": "dist/cli.js"
-  },
+  "bin": "dist/cli.js",
   "files": [
     "dist",
     "action.yml",
