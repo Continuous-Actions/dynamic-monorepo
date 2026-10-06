@@ -26,13 +26,13 @@ This works until the repository grows. Then:
 In the root of your repository:
 
 ```bash
-npx github:continuous-actions/dynamic-monorepo projects
+npx dynamic-monorepo projects
 ```
 
 This lists every project with its folder, targets and dependencies. Compare it with your existing workflows: each `services/*` or `apps/*` folder that has its own workflow should appear. To see what would run for your current branch:
 
 ```bash
-npx github:continuous-actions/dynamic-monorepo --base origin/main
+npx dynamic-monorepo --base origin/main
 ```
 
 ## Step 2: map your `paths` lists
@@ -62,7 +62,7 @@ If the table told you to do nothing, you don't need a config file. Otherwise cre
 }
 ```
 
-Run `npx github:continuous-actions/dynamic-monorepo projects` again to check the result.
+Run `npx dynamic-monorepo projects` again to check the result.
 
 ## Step 3: one workflow for every project
 
