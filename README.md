@@ -1,10 +1,10 @@
 # dynamic-monorepo
 
-<!-- Scorecard URLs are case-sensitive: keep the org login "Continuous-Actions". -->
+<!-- Scorecard URLs are case-sensitive: keep the org login "continuous-actions". -->
 [![CI](https://github.com/continuous-actions/dynamic-monorepo/actions/workflows/ci.yml/badge.svg)](https://github.com/continuous-actions/dynamic-monorepo/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/continuous-actions/dynamic-monorepo?sort=semver)](https://github.com/continuous-actions/dynamic-monorepo/releases)
 [![Marketplace](https://img.shields.io/badge/marketplace-dynamic--monorepo-blue?logo=github)](https://github.com/marketplace/actions/dynamic-monorepo)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Continuous-Actions/dynamic-monorepo/badge)](https://scorecard.dev/viewer/?uri=github.com/Continuous-Actions/dynamic-monorepo)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/continuous-actions/dynamic-monorepo/badge)](https://scorecard.dev/viewer/?uri=github.com/continuous-actions/dynamic-monorepo)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 **Build, test and deploy only the projects a change affects. No config file needed.**
