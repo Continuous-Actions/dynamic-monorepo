@@ -138,6 +138,8 @@ It annotates the workflow file and lists in the job summary:
 
 Run it locally with `npx github:continuous-actions/dynamic-monorepo audit`. On a sample of active public monorepos, about a third had at least one of these problems.
 
+**Prefer not to add an action?** `npx github:continuous-actions/dynamic-monorepo audit --fix` writes the missing folders into those `paths:` lists and adds `/**` to bare directories, then you commit the diff. It edits only the `paths` lists and keeps your comments and quoting. A list it can't edit safely (YAML anchors, multi-line entries) is reported instead, along with stale workflow references, which need a human.
+
 ## What it detects
 
 A **project** is a folder that contains one of these files. A changed file belongs to the closest project folder above it.

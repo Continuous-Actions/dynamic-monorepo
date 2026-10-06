@@ -3,8 +3,8 @@
 
 import { afterAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdirSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { CFG, CONFIG, cleanup, pushPayload, Repo, runAction } from './helpers.ts';
 
 afterAll(cleanup);
@@ -260,6 +260,57 @@ describe('path-filter audit', () => {
     const cli = spawnSync(process.execPath, [resolve(import.meta.dirname, '..', 'dist', 'cli.js'), 'audit'], { cwd: repo.dir, encoding: 'utf8' });
     expect(cli.status).toBe(1);
     expect(cli.stdout).toMatch(/web.yml:\d+: `packages\/shared\/\*\*` is missing/);
+  });
+
+  describe('--fix', () => {
+    const CLI = resolve(import.meta.dirname, '..', 'dist', 'cli.js');
+    const run = (dir: string, ...args: string[]) => spawnSync(process.execPath, [CLI, 'audit', '--fix', ...args], { cwd: dir, encoding: 'utf8' });
+    const read = (repo: Repo, f: string) => readFileSync(join(repo.dir, f), 'utf8');
+
+    it('adds missing folders and globs directories, editing only the paths lists', () => {
+      const repo = auditRepo();
+      repo.write({ '.github/workflows/web.yml': wf("      - 'apps/web/**'   # the app\n      - 'packages/ui/**'\n      - '.github/workflows/old-web.yml'").replace('name: web', '# keep me\nname: web') });
+      const r = run(repo.dir);
+      expect(r.status).toBe(1); // the stale workflow reference needs a human
+      expect(r.stdout).toContain("fixed  .github/workflows/web.yml: added `packages/shared/**` in on.pull_request.paths");
+      expect(r.stdout).toContain('fixed  .github/workflows/ui.yml: `packages/ui` → `packages/ui/**`');
+      expect(r.stdout).toMatch(/left {3}\.github\/workflows\/web\.yml:\d+: `\.github\/workflows\/old-web\.yml`/);
+      expect(read(repo, '.github/workflows/web.yml')).toBe(
+        wf("      - 'apps/web/**'   # the app\n      - 'packages/ui/**'\n      - '.github/workflows/old-web.yml'\n      - 'packages/shared/**'").replace('name: web', '# keep me\nname: web'),
+      );
+      expect(read(repo, '.github/workflows/ui.yml')).toBe(wf("      - 'packages/ui/**'\n      - 'packages/shared/**'"));
+      const again = spawnSync(process.execPath, [CLI, 'audit'], { cwd: repo.dir, encoding: 'utf8' });
+      expect(again.stdout.trim().split('\n')).toHaveLength(1);
+      expect(again.stdout).toContain('old-web.yml');
+    });
+
+    it('keeps flow lists, plain scalars and CRLF line endings', () => {
+      const repo = auditRepo();
+      const flow = 'name: web\r\non:\r\n  push:\r\n    paths: [apps/web/**, packages/ui/**]  # keep [x]\r\njobs:\r\n  t:\r\n    runs-on: ubuntu-latest\r\n    steps:\r\n      - run: echo hi\r\n';
+      repo.write({ '.github/workflows/web.yml': flow, '.github/workflows/ui.yml': null });
+      expect(run(repo.dir).status).toBe(0);
+      expect(read(repo, '.github/workflows/web.yml')).toBe(flow.replace('packages/ui/**]', 'packages/ui/**, packages/shared/**]'));
+    });
+
+    it('leaves lists it cannot edit safely untouched', () => {
+      const repo = auditRepo();
+      const anchored = "name: web\non:\n  push:\n    paths: &p\n      - 'apps/web/**'\n  pull_request:\n    paths: *p\njobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n";
+      repo.write({ '.github/workflows/web.yml': anchored, '.github/workflows/ui.yml': null });
+      repo.write({ 'apps/web/package.json': JSON.stringify({ name: 'web', dependencies: { shared: '*' } }) });
+      const r = run(repo.dir, '--json');
+      expect(r.status).toBe(1);
+      const out = JSON.parse(r.stdout);
+      expect(out.fixed).toEqual([]);
+      expect(out.left.length).toBeGreaterThan(0);
+      expect(read(repo, '.github/workflows/web.yml')).toBe(anchored);
+    });
+
+    it('is only accepted by audit', () => {
+      const repo = auditRepo();
+      const r = spawnSync(process.execPath, [CLI, '--fix'], { cwd: repo.dir, encoding: 'utf8' });
+      expect(r.status).toBe(2);
+      expect(r.stderr).toContain('--fix only applies to the audit command');
+    });
   });
 });
 
