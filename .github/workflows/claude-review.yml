@@ -4,6 +4,9 @@ on:
   pull_request:
     types: [opened, ready_for_review, synchronize, review_requested]
 
+# Jobs declare the permissions they need; nothing is granted by default.
+permissions: {}
+
 concurrency:
   group: claude-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -15,7 +18,7 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository &&
       (github.event.action != 'review_requested' ||
        github.event.requested_team.slug == 'claude-review')
-    uses: Continuous-Actions/shared/.github/workflows/claude-review.yml@c3b1ca2e480d0df7254849b85dde06283a3b6862
+    uses: Continuous-Actions/shared/.github/workflows/claude-review.yml@180631d76d2aab123900a17e27f2212331266137
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
     permissions:
