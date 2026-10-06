@@ -3,6 +3,11 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses semantic versioning.
 
+## [1.4.1] - 2026-10-07
+
+### Added
+- Published to npm as `dynamic-monorepo`, so the CLI runs with `npx dynamic-monorepo`. npm 12 refuses `npx github:...` installs by default (`EALLOWGIT`). New versions are published from `release.yml` with trusted publishing.
+
 ## [1.4.0] - 2026-10-07
 
 ### Added
