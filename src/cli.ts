@@ -2,13 +2,14 @@
 // and `projects` to list what the configuration (or auto-detection) finds.
 //   npx github:continuous-actions/dynamic-monorepo [projects] [--base origin/main] [--json] [--verbose]
 
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { ConfigError, TARGETS } from './config.ts';
 import { execute, fsReader, loadConfig, type LoadedConfig } from './engine.ts';
-import { auditWorkflows } from './audit.ts';
+import { auditWorkflows, type AuditFinding } from './audit.ts';
+import { applyFixes } from './fix.ts';
 import { Git, GitError } from './git.ts';
 import { CycleError, Graph } from './graph.ts';
 import { CONFIG_FILE, detectionLines, NAME, serialize, textReport } from './report.ts';
@@ -19,6 +20,7 @@ Usage:
   ${NAME} [options]             What CI would build, test, deploy and docker-build for your changes
   ${NAME} projects [options]    List every project, its folder, targets and dependencies
   ${NAME} audit [options]       Check workflow on.*.paths filters against the dependency graph
+  ${NAME} audit --fix           ...and add what's missing to those paths lists
 
 Options:
   --base <ref>       Compare against the merge-base with this ref
@@ -30,6 +32,7 @@ Options:
   --fetch            Allow fetching missing commits from origin
   --json             Print the full plan as JSON
   --verbose          List skipped projects and unowned files
+  --fix              (audit) Edit the paths lists; nothing else in the workflows changes
   -h, --help         Show this help
 `;
 
@@ -44,6 +47,7 @@ export function cli(argv: string[]): number {
         config: { type: 'string', default: CONFIG_FILE }, cwd: { type: 'string', default: process.cwd() },
         uncommitted: { type: 'boolean', default: false }, fetch: { type: 'boolean', default: false },
         json: { type: 'boolean', default: false }, verbose: { type: 'boolean', default: false },
+        fix: { type: 'boolean', default: false },
         help: { type: 'boolean', short: 'h', default: false },
       },
       strict: true,
@@ -52,6 +56,7 @@ export function cli(argv: string[]): number {
     args = parsed.values;
     command = parsed.positionals.join(' ') || undefined;
     if (command !== undefined && command !== 'projects' && command !== 'audit') throw new Error(`unknown command "${command}" (commands: projects, audit)`);
+    if (parsed.values.fix && command !== 'audit') throw new Error('--fix only applies to the audit command');
   } catch (err) {
     process.stderr.write(`${(err as Error).message}\n\n${HELP}`);
     return 2;
@@ -62,7 +67,7 @@ export function cli(argv: string[]): number {
   }
   try {
     if (command === 'projects') return listProjects(loadConfig(args.cwd, args.config), args.json);
-    if (command === 'audit') return runAudit(loadConfig(args.cwd, args.config), args.json);
+    if (command === 'audit') return runAudit(loadConfig(args.cwd, args.config), args.json, args.fix);
     const git = new Git(args.cwd);
     const base = args.base ?? defaultBase(git);
     let head = args.head;
@@ -83,12 +88,40 @@ export function cli(argv: string[]): number {
 }
 
 /** Checks every workflow's on.*.paths list against the dependency graph. Exit 1 when something is wrong. */
-function runAudit({ git, top, config }: LoadedConfig, asJson: boolean): number {
+function runAudit({ git, top, config }: LoadedConfig, asJson: boolean, fix: boolean): number {
   const findings = auditWorkflows(config, fsReader(top, git));
+  if (fix) return fixAudit(top, findings, asJson);
   if (asJson) process.stdout.write(`${JSON.stringify(findings, null, 2)}\n`);
   else if (findings.length === 0) process.stdout.write('No path-filter problems found.\n');
   else for (const f of findings) process.stdout.write(`${f.file}:${f.line}: ${f.message}\n`);
   return findings.length === 0 ? 0 : 1;
+}
+
+/** Writes the fixable findings into the workflow files and reports the rest. Exit 1 if anything is left. */
+function fixAudit(top: string, findings: AuditFinding[], asJson: boolean): number {
+  const fixed: AuditFinding[] = [];
+  const left: AuditFinding[] = [];
+  for (const file of new Set(findings.map((f) => f.file))) {
+    const abs = join(top, file);
+    const before = readFileSync(abs, 'utf8');
+    const r = applyFixes(before, findings.filter((f) => f.file === file));
+    if (r.text !== before) writeFileSync(abs, r.text);
+    fixed.push(...r.fixed);
+    left.push(...r.skipped);
+  }
+  if (asJson) {
+    process.stdout.write(`${JSON.stringify({ fixed, left }, null, 2)}\n`);
+    return left.length === 0 ? 0 : 1;
+  }
+  const change = (f: AuditFinding) => (f.fix!.add ? `added \`${f.fix!.add}\`` : `\`${f.fix!.replace!.from}\` → \`${f.fix!.replace!.to}\``);
+  const out = [
+    ...fixed.map((f) => `fixed  ${f.file}: ${change(f)} in on.${f.fix!.event}.paths`),
+    ...left.map((f) => `left   ${f.file}:${f.line}: ${f.message}`),
+  ];
+  if (out.length === 0) out.push('No path-filter problems found.');
+  else out.push('', `${fixed.length} fixed, ${left.length} left to fix by hand.${fixed.length ? ' Review the edits with `git diff`.' : ''}`);
+  process.stdout.write(`${out.join('\n')}\n`);
+  return left.length === 0 ? 0 : 1;
 }
 
 /** Prints every project in dependency order, plus how they were found and likely mistakes. */

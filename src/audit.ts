@@ -13,6 +13,8 @@ export type AuditFinding = {
   line: number;
   kind: 'missing-dependency' | 'directory-without-glob' | 'missing-workflow-file';
   message: string;
+  /** What `audit --fix` changes in on.<event>.paths; absent when the fix needs a human. */
+  fix?: { event: string; add?: string; replace?: { from: string; to: string } };
 };
 
 const EVENTS = ['push', 'pull_request', 'pull_request_target'];
@@ -43,8 +45,8 @@ export function auditWorkflows(config: Config, reader: RepoReader): AuditFinding
       if (!Array.isArray(paths) || !paths.every((p) => typeof p === 'string')) continue;
       const line = lineOf(lines, event, paths[0] as string);
       const include = (paths as string[]).filter((p) => !p.startsWith('!'));
-      const add = (kind: AuditFinding['kind'], message: string) => {
-        if (!findings.some((f) => f.file === file && f.kind === kind && f.message === message)) findings.push({ file, line, kind, message });
+      const add = (kind: AuditFinding['kind'], message: string, fix?: AuditFinding['fix']) => {
+        if (!findings.some((f) => f.file === file && f.kind === kind && f.message === message)) findings.push({ file, line, kind, message, ...(fix && { fix }) });
       };
 
       for (const p of include) {
@@ -53,7 +55,7 @@ export function auditWorkflows(config: Config, reader: RepoReader): AuditFinding
         }
         const bare = p.replace(/\/+$/, '');
         if (!/[*?[]/.test(bare) && dirSet.has(bare)) {
-          add('directory-without-glob', `\`${p}\` is a directory; GitHub path filters need \`${bare}/**\` to match the files inside it.`);
+          add('directory-without-glob', `\`${p}\` is a directory; GitHub path filters need \`${bare}/**\` to match the files inside it.`, { event, replace: { from: p, to: `${bare}/**` } });
         }
       }
 
@@ -84,7 +86,7 @@ export function auditWorkflows(config: Config, reader: RepoReader): AuditFinding
         const d = config.projects.get(dep)!;
         const who = [...users].sort();
         const needs = who.length > 3 ? `${who.slice(0, 3).join(', ')} and ${who.length - 3} more` : who.join(', ');
-        add('missing-dependency', `\`${d.path}/**\` is missing from on.${event}.paths: ${needs} depend${who.length === 1 ? 's' : ''} on \`${dep}\`, so a change there skips this workflow.`);
+        add('missing-dependency', `\`${d.path}/**\` is missing from on.${event}.paths: ${needs} depend${who.length === 1 ? 's' : ''} on \`${dep}\`, so a change there skips this workflow.`, { event, add: `${d.path}/**` });
       }
     }
   }
