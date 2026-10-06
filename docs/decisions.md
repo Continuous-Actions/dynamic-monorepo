@@ -4,12 +4,12 @@ These are short records of *why* the action works the way it does.
 
 ## Naming
 
-**Decision:** `Continuous-Actions/dynamic-monorepo`. The repository, the Action (`uses: Continuous-Actions/dynamic-monorepo@v1`) and any future npm/CLI package all use the same name. The Marketplace display name is "Dynamic Monorepo".
+**Decision:** `continuous-actions/dynamic-monorepo`. The repository, the Action (`uses: continuous-actions/dynamic-monorepo@v1`) and any future npm/CLI package all use the same name. The Marketplace display name is "Dynamic Monorepo".
 **Why:** The research shortlisted `monorepo-impact` (66/80), `affected-plan`, `impact-matrix` and `monorepo-affected` ([naming.md](naming.md)). The maintainer picked `dynamic-monorepo`. On 2026-10-05 it was free on Marketplace, npm and as a GitHub user/org, and no repositories had a similar name. It names the outcome (dynamic, per-change CI for monorepos) and doesn't clash with Nx's "affected" or Terraform's "plan". Identical repo and action names keep `uses:` obvious.
 
 ## Organisation
 
-**Decision:** The project lives under the `Continuous-Actions` org, a home for CI/CD helper actions. The org was renamed from `OpenMind-SI` on 2026-10-05; GitHub redirects the old repository URLs. The project name is product-specific, so the org can hold sibling tools later (a security action, an optimizer, release tooling) without renames. Nothing in the code assumes it is the only project in the org.
+**Decision:** The project lives under the `continuous-actions` org, a home for CI/CD helper actions. The org was renamed from `OpenMind-SI` on 2026-10-05; GitHub redirects the old repository URLs. The project name is product-specific, so the org can hold sibling tools later (a security action, an optimizer, release tooling) without renames. Nothing in the code assumes it is the only project in the org.
 
 ## Runtime and language
 

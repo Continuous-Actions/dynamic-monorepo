@@ -1,16 +1,16 @@
 > **Final decision (2026-10-05): `dynamic-monorepo`**, chosen by the maintainer from the research shortlist below plus their own proposals. The working name `dynamic-monorepos` (plural) was renamed to the singular form, which matches the config file name `dynamic-monorepo.config.json`.
 > It was free on GitHub Marketplace (slug 404), on npm, and as a GitHub user/org, and a repository search for the name returned 0 results.
-> The repo and the Action share the name (`uses: Continuous-Actions/dynamic-monorepo@v1`), and the Marketplace display name is **Dynamic Monorepo**.
+> The repo and the Action share the name (`uses: continuous-actions/dynamic-monorepo@v1`), and the Marketplace display name is **Dynamic Monorepo**.
 > The research recommendation was `monorepo-impact` (66/80). `dynamic-monorepo` is broader: it describes the outcome (dynamic CI for monorepos) rather than the mechanism, which leaves room for future features such as inference and test impact.
 > We also considered `monorepo-actions` and rejected it: a GitHub org called `Monorepo-Actions` already exists, and the name reads as a collection of actions.
 
-# Naming: recommendation for the Continuous-Actions affected-project planning action
+# Naming: recommendation for the continuous-actions affected-project planning action
 
-Research date: 2026-10-05. Org: `Continuous-Actions` (renamed from `OpenMind-SI` on 2026-10-05; GitHub redirects the old URLs).
+Research date: 2026-10-05. Org: `continuous-actions` (renamed from `OpenMind-SI` on 2026-10-05; GitHub redirects the old URLs).
 
 ## Recommendation
 
-**`monorepo-impact`** (repo `Continuous-Actions/monorepo-impact`, usage `uses: Continuous-Actions/monorepo-impact@v1`).
+**`monorepo-impact`** (repo `continuous-actions/monorepo-impact`, usage `uses: continuous-actions/monorepo-impact@v1`).
 
 Runner-up: **`affected-plan`**.
 
@@ -92,7 +92,7 @@ Scores are judgment-based; the evidence table drives Uniq, Mkt and Repo. The top
 ### Why `monorepo-impact` wins
 - Technical relevance: "impact" is the established term for "what does this change affect" (impact analysis); it covers the reverse-transitive walk and the explain-why output. "Monorepo" names the domain.
 - Namespace: free slug, free npm, no user/org, no notable repo (nearest are 0 to 2 stars).
-- Usability: `uses: Continuous-Actions/monorepo-impact@v1` reads naturally; output names (`affected`, `matrix`, `reasons`) stay free to be precise without the name promising a format.
+- Usability: `uses: continuous-actions/monorepo-impact@v1` reads naturally; output names (`affected`, `matrix`, `reasons`) stay free to be precise without the name promising a format.
 - Marketplace: "Monorepo Impact" is distinctive and does not use a competitor's name (Nx, Turbo).
 - Weakness: "impact" is somewhat generic and a reader may not guess it emits matrices. The description, README tagline and topics cover that.
 
@@ -115,17 +115,17 @@ Scores are judgment-based; the evidence table drives Uniq, Mkt and Repo. The top
 
 ## Decision: Action name vs repo name
 
-Use the same string everywhere: repo `monorepo-impact`, Marketplace slug `monorepo-impact`, future npm `monorepo-impact`, usage `Continuous-Actions/monorepo-impact@v1`.
+Use the same string everywhere: repo `monorepo-impact`, Marketplace slug `monorepo-impact`, future npm `monorepo-impact`, usage `continuous-actions/monorepo-impact@v1`.
 - Marketplace display name (`name:` in `action.yml`) is `Monorepo Impact`; it must be globally unique and the slug derives from it, so repo and slug match automatically.
 - No `gha-` prefix or `-action` suffix: the repo already lives in the Actions context and `uses:` would read redundantly. Keep `-action` only as a fallback if a clash appears.
 - Release tags: moving `v1` major tag plus semver tags (independent of naming).
 
 ## Decision: Org
 
-`Continuous-Actions` is fixed and currently has no repos. The name is deliberately product-specific, not an umbrella like `gha-plan`, `ci-tools` or `pipeline`, so future siblings (security, optimizer, cost, release) can take their own descriptive names. Avoid org-prefixed names (`openmind-*`); the org already appears in `uses:`.
+`continuous-actions` is fixed and currently has no repos. The name is deliberately product-specific, not an umbrella like `gha-plan`, `ci-tools` or `pipeline`, so future siblings (security, optimizer, cost, release) can take their own descriptive names. Avoid org-prefixed names (`openmind-*`); the org already appears in `uses:`.
 
 ## Pre-publish checklist
-1. Create `Continuous-Actions/monorepo-impact`; re-run the slug probe right before first release (expect 404 from `https://github.com/marketplace/actions/monorepo-impact`).
+1. Create `continuous-actions/monorepo-impact`; re-run the slug probe right before first release (expect 404 from `https://github.com/marketplace/actions/monorepo-impact`).
 2. Set `name: Monorepo Impact`, the description above, and `branding: { icon: share-2, color: blue }`.
 3. Marketplace category: Continuous integration (plus Utilities). Topics: `monorepo`, `affected`, `dependency-graph`, `github-actions`, `matrix`.
 4. Claim npm `monorepo-impact` only when the CLI is real (no squatting).
@@ -136,5 +136,5 @@ Use the same string everywhere: repo `monorepo-impact`, Marketplace slug `monore
 - Taken slug: https://github.com/marketplace/actions/monorepo-matrix
 - Repos: https://github.com/28mm/blast-radius, https://github.com/DataDog/package-blast-radius, https://github.com/Ripple-TS/ripple, https://github.com/XRPLF/rippled, https://github.com/leanix/nx-affected-dependencies-action, https://github.com/leonardochaia/dotnet-affected-action, https://github.com/rogiervanstraten/terraform-affected-projects, https://github.com/bmcszk/monorepo-matrix, https://github.com/zAx4hub/monorepo-impact-radar
 - npm: https://registry.npmjs.org/affected, https://registry.npmjs.org/blast-radius, https://registry.npmjs.org/ripple
-- Orgs: https://github.com/Continuous-Actions, https://github.com/Blast-Radius, https://github.com/ripple
+- Orgs: https://github.com/continuous-actions, https://github.com/Blast-Radius, https://github.com/ripple
 - Action branding docs: https://docs.github.com/en/actions/sharing-automations/creating-actions/metadata-syntax-for-github-actions#branding

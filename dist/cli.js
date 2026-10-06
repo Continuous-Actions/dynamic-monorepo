@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// dynamic-monorepo (MIT) https://github.com/Continuous-Actions/dynamic-monorepo. Generated file, do not edit.
+// dynamic-monorepo (MIT) https://github.com/continuous-actions/dynamic-monorepo. Generated file, do not edit.
 import{existsSync as fs,mkdtempSync as us,rmSync as ds}from"node:fs";import{tmpdir as ps}from"node:os";import{join as qn}from"node:path";import{parseArgs as gs}from"node:util";function Vn(e){let n=0,t=e.replace(/^﻿/,""),r=a=>{let f=t.slice(0,n),l=f.split(`
 `).length,u=n-f.lastIndexOf(`
 `);throw new SyntaxError(`${a} at line ${l}, column ${u}`)},i=()=>{for(;n<t.length&&` 	

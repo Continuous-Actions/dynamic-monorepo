@@ -1,6 +1,6 @@
 name: Dynamic Monorepo
 description: "Zero-config monorepo CI. Detects affected projects and dependencies from the git diff, outputs build/test/deploy matrices."
-author: Continuous-Actions
+author: continuous-actions
 branding:
   icon: share-2
   color: blue

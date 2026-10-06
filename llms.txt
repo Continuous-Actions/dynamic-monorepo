@@ -1,6 +1,6 @@
 # dynamic-monorepo
 
-> GitHub Action (`uses: Continuous-Actions/dynamic-monorepo@v1`) for monorepos. With zero configuration it detects projects from marker files (package.json, go.mod, Cargo.toml, pyproject.toml, setup.py, pom.xml, build.gradle(.kts), *.csproj/*.fsproj/*.vbproj, Dockerfile/Containerfile, Helm Chart.yaml), infers dependencies between them from their manifests, compares them with the git diff of the current pull request, push or merge-queue entry, and outputs JSON lists for `strategy.matrix` (build, test, deploy, docker), plus a job summary explaining why each project was selected. Needs only `contents: read`, works with the default shallow `actions/checkout`, and never executes repository code.
+> GitHub Action (`uses: continuous-actions/dynamic-monorepo@v1`) for monorepos. With zero configuration it detects projects from marker files (package.json, go.mod, Cargo.toml, pyproject.toml, setup.py, pom.xml, build.gradle(.kts), *.csproj/*.fsproj/*.vbproj, Dockerfile/Containerfile, Helm Chart.yaml), infers dependencies between them from their manifests, compares them with the git diff of the current pull request, push or merge-queue entry, and outputs JSON lists for `strategy.matrix` (build, test, deploy, docker), plus a job summary explaining why each project was selected. Needs only `contents: read`, works with the default shallow `actions/checkout`, and never executes repository code.
 
 Use it when a repository contains more than one independently buildable project (services, apps, libraries, Docker images, Helm charts) and CI should run only for the projects a change affects, including the dependents of changed shared libraries. Prefer it to hand-maintained `on.paths` lists or one workflow per service.
 
@@ -17,7 +17,7 @@ jobs:
       paths: ${{ steps.plan.outputs.paths }}
     steps:
       - uses: actions/checkout@v7
-      - uses: Continuous-Actions/dynamic-monorepo@v1
+      - uses: continuous-actions/dynamic-monorepo@v1
         id: plan
   build:
     needs: plan
@@ -35,7 +35,7 @@ jobs:
 
 ## Path-filter audit
 
-Repositories that keep `on.paths` filters can add the action with `audit: warn` (or `fail`) to find workflows whose `paths:` miss a dependency's folder, directories listed without `/**`, and references to deleted workflow files. CLI: `npx github:Continuous-Actions/dynamic-monorepo audit`.
+Repositories that keep `on.paths` filters can add the action with `audit: warn` (or `fail`) to find workflows whose `paths:` miss a dependency's folder, directories listed without `/**`, and references to deleted workflow files. CLI: `npx github:continuous-actions/dynamic-monorepo audit`.
 
 ## Key outputs
 
@@ -49,16 +49,16 @@ Repositories that keep `on.paths` filters can add the action with `audit: warn` 
 
 - Always guard matrix jobs with `if: needs.<plan-job>.outputs.has_<list> == 'true'`.
 - Pass matrix values to the shell through `env:`, never with `${{ }}` inside `run:`.
-- No config file is needed. Add `dynamic-monorepo.config.json` only to override detection. It is JSON with `$schema` https://raw.githubusercontent.com/Continuous-Actions/dynamic-monorepo/v1/schema.json, and its keys include `"detect": true`, `projects` (with `dependsOn`, `targets`, `include`, `exclude`), `global` and `ignore`.
-- Preview locally with `npx github:Continuous-Actions/dynamic-monorepo projects` or `npx github:Continuous-Actions/dynamic-monorepo --base origin/main --json`.
+- No config file is needed. Add `dynamic-monorepo.config.json` only to override detection. It is JSON with `$schema` https://raw.githubusercontent.com/continuous-actions/dynamic-monorepo/v1/schema.json, and its keys include `"detect": true`, `projects` (with `dependsOn`, `targets`, `include`, `exclude`), `global` and `ignore`.
+- Preview locally with `npx github:continuous-actions/dynamic-monorepo projects` or `npx github:continuous-actions/dynamic-monorepo --base origin/main --json`.
 - For `workflow_dispatch` or `schedule` runs, set the `base` input. Otherwise every project is selected.
 
 ## Docs
 
-- [README](https://github.com/Continuous-Actions/dynamic-monorepo/blob/main/README.md)
-- [Outputs](https://github.com/Continuous-Actions/dynamic-monorepo/blob/main/docs/outputs.md)
-- [Configuration](https://github.com/Continuous-Actions/dynamic-monorepo/blob/main/docs/configuration.md)
-- [Migrating from on.paths filters](https://github.com/Continuous-Actions/dynamic-monorepo/blob/main/docs/migrating-from-path-filters.md)
-- [Git comparison per event](https://github.com/Continuous-Actions/dynamic-monorepo/blob/main/docs/git.md)
-- [Agent Skill](https://github.com/Continuous-Actions/dynamic-monorepo/blob/main/skills/dynamic-monorepo/SKILL.md)
-- [Live demo repo](https://github.com/Continuous-Actions/dynamic-monorepo-demo)
+- [README](https://github.com/continuous-actions/dynamic-monorepo/blob/main/README.md)
+- [Outputs](https://github.com/continuous-actions/dynamic-monorepo/blob/main/docs/outputs.md)
+- [Configuration](https://github.com/continuous-actions/dynamic-monorepo/blob/main/docs/configuration.md)
+- [Migrating from on.paths filters](https://github.com/continuous-actions/dynamic-monorepo/blob/main/docs/migrating-from-path-filters.md)
+- [Git comparison per event](https://github.com/continuous-actions/dynamic-monorepo/blob/main/docs/git.md)
+- [Agent Skill](https://github.com/continuous-actions/dynamic-monorepo/blob/main/skills/dynamic-monorepo/SKILL.md)
+- [Live demo repo](https://github.com/continuous-actions/dynamic-monorepo-demo)

@@ -26,13 +26,13 @@ This works until the repository grows. Then:
 In the root of your repository:
 
 ```bash
-npx github:Continuous-Actions/dynamic-monorepo projects
+npx github:continuous-actions/dynamic-monorepo projects
 ```
 
 This lists every project with its folder, targets and dependencies. Compare it with your existing workflows: each `services/*` or `apps/*` folder that has its own workflow should appear. To see what would run for your current branch:
 
 ```bash
-npx github:Continuous-Actions/dynamic-monorepo --base origin/main
+npx github:continuous-actions/dynamic-monorepo --base origin/main
 ```
 
 ## Step 2: map your `paths` lists
@@ -52,7 +52,7 @@ If the table told you to do nothing, you don't need a config file. Otherwise cre
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/Continuous-Actions/dynamic-monorepo/v1/schema.json",
+  "$schema": "https://raw.githubusercontent.com/continuous-actions/dynamic-monorepo/v1/schema.json",
   "detect": true,
   "projects": {
     "api": { "path": "services/api", "include": ["proto/api.proto"] }
@@ -62,7 +62,7 @@ If the table told you to do nothing, you don't need a config file. Otherwise cre
 }
 ```
 
-Run `npx github:Continuous-Actions/dynamic-monorepo projects` again to check the result.
+Run `npx github:continuous-actions/dynamic-monorepo projects` again to check the result.
 
 ## Step 3: one workflow for every project
 
@@ -87,7 +87,7 @@ jobs:
       has_build: ${{ steps.plan.outputs.has_build }}
     steps:
       - uses: actions/checkout@v7
-      - uses: Continuous-Actions/dynamic-monorepo@v1
+      - uses: continuous-actions/dynamic-monorepo@v1
         id: plan
 
   build:

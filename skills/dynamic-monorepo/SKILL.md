@@ -6,7 +6,7 @@ description: Set up GitHub Actions CI for a monorepo so that only the projects a
 # Selective monorepo CI with dynamic-monorepo
 
 1. **Check that it fits.** The repository needs two or more buildable folders with marker files. Preview what will be detected (nothing to install):
-   `npx github:Continuous-Actions/dynamic-monorepo projects`
+   `npx github:continuous-actions/dynamic-monorepo projects`
 2. **Add one planning job** and fan out with `fromJSON`. Copy the snippet exactly. The `if:` guard is required, because an empty matrix fails the job.
 
 ```yaml
@@ -23,7 +23,7 @@ jobs:
       has_docker: ${{ steps.plan.outputs.has_docker }}
     steps:
       - uses: actions/checkout@v7
-      - uses: Continuous-Actions/dynamic-monorepo@v1
+      - uses: continuous-actions/dynamic-monorepo@v1
         id: plan
 
   build:
@@ -57,15 +57,15 @@ jobs:
 ```
 
 3. **Required status checks.** Add a final job with `if: always()` that fails only when a job it depends on failed, and make that job the only required check.
-4. **Correct detection only if needed.** Add `dynamic-monorepo.config.json` at the repository root with `"detect": true`. Override projects under `projects` (`dependsOn`, `targets`, `include`, `exclude`), and use `global` or `ignore` globs for files that should select every project or none. Schema: https://raw.githubusercontent.com/Continuous-Actions/dynamic-monorepo/v1/schema.json
-5. **Verify on a branch.** `npx github:Continuous-Actions/dynamic-monorepo --base origin/main` shows what CI will run and why.
+4. **Correct detection only if needed.** Add `dynamic-monorepo.config.json` at the repository root with `"detect": true`. Override projects under `projects` (`dependsOn`, `targets`, `include`, `exclude`), and use `global` or `ignore` globs for files that should select every project or none. Schema: https://raw.githubusercontent.com/continuous-actions/dynamic-monorepo/v1/schema.json
+5. **Verify on a branch.** `npx github:continuous-actions/dynamic-monorepo --base origin/main` shows what CI will run and why.
 
-If the user wants to keep their existing `on.paths` workflows, add the action as a check instead with `with: { audit: warn }` (or `fail`); it reports `paths:` lists that miss a dependency's folder. Locally: `npx github:Continuous-Actions/dynamic-monorepo audit`.
+If the user wants to keep their existing `on.paths` workflows, add the action as a check instead with `with: { audit: warn }` (or `fail`); it reports `paths:` lists that miss a dependency's folder. Locally: `npx github:continuous-actions/dynamic-monorepo audit`.
 
 Notes:
 - It works with the default shallow checkout.
 - It needs only `contents: read`.
 - For `workflow_dispatch` or `schedule` runs, set the `base` input. Otherwise every project is selected.
-- If the repository already has one workflow per service limited by `on.paths`, map each `paths` entry as described in https://github.com/Continuous-Actions/dynamic-monorepo/blob/main/docs/migrating-from-path-filters.md, and don't put `on.paths` on the new workflow (a skipped workflow leaves required checks pending).
+- If the repository already has one workflow per service limited by `on.paths`, map each `paths` entry as described in https://github.com/continuous-actions/dynamic-monorepo/blob/main/docs/migrating-from-path-filters.md, and don't put `on.paths` on the new workflow (a skipped workflow leaves required checks pending).
 
-Full docs: https://github.com/Continuous-Actions/dynamic-monorepo
+Full docs: https://github.com/continuous-actions/dynamic-monorepo
