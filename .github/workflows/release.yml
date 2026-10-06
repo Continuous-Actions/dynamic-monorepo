@@ -1,0 +1,43 @@
+name: Release
+
+# Pushing a version tag (v1.2.3) publishes the CLI to npm with trusted publishing
+# (OIDC, no NPM_TOKEN). The trusted publisher on npmjs.com names this file: release.yml.
+# GitHub releases and the moving v1 tag are still made by hand.
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+jobs:
+  npm:
+    # Forks inherit this workflow; only the upstream repository publishes.
+    if: github.repository == 'continuous-actions/dynamic-monorepo'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Check the tag matches package.json
+        env:
+          TAG: ${{ github.ref_name }}
+        run: test "v$(node -p 'require("./package.json").version')" = "$TAG"
+      - run: corepack enable && yarn install --immutable
+      - run: yarn check
+      - name: Publish (skipped when this version is already on npm)
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          if npm view "dynamic-monorepo@$version" version >/dev/null 2>&1; then
+            echo "::notice::dynamic-monorepo@$version is already on npm."
+          else
+            npm publish --access public
+          fi
