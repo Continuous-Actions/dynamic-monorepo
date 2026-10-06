@@ -14,6 +14,25 @@
 
 **See it live:** the [demo monorepo](https://github.com/Continuous-Actions/dynamic-monorepo-demo) (Node, Go and Docker, no config) has pull requests showing what runs for a shared-library change, a Dockerfile change and a docs-only change.
 
+<!-- toc -->
+**Contents**
+
+- [Quick start](#quick-start)
+- [Already using `on.paths`? Audit it](#already-using-onpaths-audit-it)
+- [What it detects](#what-it-detects)
+- [What you get](#what-you-get)
+- [Customising](#customising)
+- [Troubleshooting](#troubleshooting)
+- [For AI agents](#for-ai-agents)
+- [FAQ](#faq)
+- [Security](#security)
+- [Inputs](#inputs)
+- [How it works](#how-it-works)
+- [Performance](#performance)
+- [Limitations](#limitations)
+- [License](#license)
+<!-- /toc -->
+
 ## Quick start
 
 > **Status:** v1 is stable. Inputs and outputs won't change incompatibly within `v1`.
