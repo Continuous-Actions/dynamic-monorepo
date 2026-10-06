@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses semantic versioning.
 
-## [Unreleased]
+## [1.4.0] - 2026-10-07
 
 ### Added
 - `audit --fix` (CLI): writes the missing dependency folders into each workflow's `on.<event>.paths` list and turns bare directories into `dir/**`, editing only those lists. Each edit is checked by re-parsing the workflow; anything it can't change safely is reported and left alone.
