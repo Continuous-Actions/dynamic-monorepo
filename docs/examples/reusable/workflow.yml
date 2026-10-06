@@ -21,7 +21,7 @@ jobs:
       has_docker: ${{ steps.plan.outputs.has_docker }}
     steps:
       - uses: actions/checkout@v4
-      - uses: Continuous-Actions/dynamic-monorepo@v1
+      - uses: continuous-actions/dynamic-monorepo@v1
         id: plan
 
   # Your existing reusable workflow, called once per affected project.

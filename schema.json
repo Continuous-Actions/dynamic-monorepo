@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/Continuous-Actions/dynamic-monorepo/v1/schema.json",
+  "$id": "https://raw.githubusercontent.com/continuous-actions/dynamic-monorepo/v1/schema.json",
   "title": "dynamic-monorepo.config.json",
   "description": "Configuration for the dynamic-monorepo GitHub Action: projects, their dependencies, and which changes affect what.",
   "type": "object",

@@ -18,7 +18,7 @@ body:
     id: layout
     attributes:
       label: Repository layout
-      description: Output of `npx github:Continuous-Actions/dynamic-monorepo projects`, or a short description of your folders and marker files.
+      description: Output of `npx github:continuous-actions/dynamic-monorepo projects`, or a short description of your folders and marker files.
       render: text
   - type: input
     id: version

@@ -6,7 +6,7 @@ When you need to change something, create `dynamic-monorepo.config.json` at the 
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/Continuous-Actions/dynamic-monorepo/v1/schema.json",
+  "$schema": "https://raw.githubusercontent.com/continuous-actions/dynamic-monorepo/v1/schema.json",
   "infer": ["node"],
   "projects": {
     "shared": { "path": "libs/shared" },

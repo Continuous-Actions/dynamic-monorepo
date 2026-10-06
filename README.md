@@ -1,9 +1,9 @@
 # dynamic-monorepo
 
-[![CI](https://github.com/Continuous-Actions/dynamic-monorepo/actions/workflows/ci.yml/badge.svg)](https://github.com/Continuous-Actions/dynamic-monorepo/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Continuous-Actions/dynamic-monorepo?sort=semver)](https://github.com/Continuous-Actions/dynamic-monorepo/releases)
+[![CI](https://github.com/continuous-actions/dynamic-monorepo/actions/workflows/ci.yml/badge.svg)](https://github.com/continuous-actions/dynamic-monorepo/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/continuous-actions/dynamic-monorepo?sort=semver)](https://github.com/continuous-actions/dynamic-monorepo/releases)
 [![Marketplace](https://img.shields.io/badge/marketplace-dynamic--monorepo-blue?logo=github)](https://github.com/marketplace/actions/dynamic-monorepo)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Continuous-Actions/dynamic-monorepo/badge)](https://scorecard.dev/viewer/?uri=github.com/Continuous-Actions/dynamic-monorepo)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/continuous-actions/dynamic-monorepo/badge)](https://scorecard.dev/viewer/?uri=github.com/continuous-actions/dynamic-monorepo)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 **Build, test and deploy only the projects a change affects. No config file needed.**
@@ -12,7 +12,7 @@
 
 `dynamic-monorepo` reads the git diff, finds the projects in your repository on its own (from `package.json`, `go.mod`, `Dockerfile` and similar files), follows the dependencies between them, and gives you JSON lists for a GitHub Actions matrix. Change a shared library and everything that uses it is rebuilt. Change a Dockerfile and that image is rebuilt. The job summary says why each project was picked.
 
-**See it live:** the [demo monorepo](https://github.com/Continuous-Actions/dynamic-monorepo-demo) (Node, Go and Docker, no config) has pull requests showing what runs for a shared-library change, a Dockerfile change and a docs-only change.
+**See it live:** the [demo monorepo](https://github.com/continuous-actions/dynamic-monorepo-demo) (Node, Go and Docker, no config) has pull requests showing what runs for a shared-library change, a Dockerfile change and a docs-only change.
 
 <!-- toc -->
 **Contents**
@@ -61,7 +61,7 @@ jobs:
       has_docker: ${{ steps.plan.outputs.has_docker }}
     steps:
       - uses: actions/checkout@v7
-      - uses: Continuous-Actions/dynamic-monorepo@v1
+      - uses: continuous-actions/dynamic-monorepo@v1
         id: plan
 
   build:
@@ -104,8 +104,8 @@ jobs:
 To see what it finds before you push, run this in your repository:
 
 ```bash
-npx github:Continuous-Actions/dynamic-monorepo projects            # every project, its folder, targets and dependencies
-npx github:Continuous-Actions/dynamic-monorepo --base origin/main  # what CI would run for your branch
+npx github:continuous-actions/dynamic-monorepo projects            # every project, its folder, targets and dependencies
+npx github:continuous-actions/dynamic-monorepo --base origin/main  # what CI would run for your branch
 ```
 
 ## Already using `on.paths`? Audit it
@@ -122,7 +122,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Continuous-Actions/dynamic-monorepo@v1
+      - uses: continuous-actions/dynamic-monorepo@v1
         with:
           audit: warn   # or "fail" to block the PR
 ```
@@ -133,7 +133,7 @@ It annotates the workflow file and lists in the job summary:
 - a directory listed without `/**`, which matches nothing inside it
 - a `.github/workflows/...` entry that no longer exists
 
-Run it locally with `npx github:Continuous-Actions/dynamic-monorepo audit`. On a sample of active public monorepos, about a third had at least one of these problems.
+Run it locally with `npx github:continuous-actions/dynamic-monorepo audit`. On a sample of active public monorepos, about a third had at least one of these problems.
 
 ## What it detects
 
@@ -191,7 +191,7 @@ You only need a config file to change what was detected. Create `dynamic-monorep
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/Continuous-Actions/dynamic-monorepo/v1/schema.json",
+  "$schema": "https://raw.githubusercontent.com/continuous-actions/dynamic-monorepo/v1/schema.json",
   "detect": true,
   "projects": {
     "web": { "path": "apps/web", "dependsOn": ["proto"], "targets": ["build", "test", "deploy"] },
@@ -213,7 +213,7 @@ The full reference, including per-target exclusions such as "test-only changes d
 
 **The build job was skipped, or failed with "Matrix vector 'project' does not contain any values".** Nothing that job builds was affected. Keep the `if: needs.plan.outputs.has_build == 'true'` line, and read the plan job's summary to see what was compared.
 
-**A project is missing, or has an odd name.** Run `npx github:Continuous-Actions/dynamic-monorepo projects`. Check that its marker file is committed and not inside a skipped folder (see [What it detects](#what-it-detects)). To add or rename a project, use a config file with `"detect": true` and an entry under `projects`.
+**A project is missing, or has an odd name.** Run `npx github:continuous-actions/dynamic-monorepo projects`. Check that its marker file is committed and not inside a skipped folder (see [What it detects](#what-it-detects)). To add or rename a project, use a config file with `"detect": true` and an entry under `projects`.
 
 **A change didn't select the project I expected.** The file is probably outside every project folder. Run with `verbose: true` to list such files. Add the file to that project's `include`, or to `global`.
 
@@ -248,7 +248,7 @@ If you set up CI with an AI coding agent, this repository has machine-readable g
 - An [Agent Skill](skills/dynamic-monorepo/SKILL.md) (`SKILL.md`) that skill-aware agents, including Claude Code, can install to set up selective monorepo CI.
 - A [JSON Schema](schema.json) for the optional config, and `--json` output from the CLI to check the plan.
 
-A prompt to try: *"Set up GitHub Actions for this monorepo so that only changed projects and their dependents are built, using Continuous-Actions/dynamic-monorepo."*
+A prompt to try: *"Set up GitHub Actions for this monorepo so that only changed projects and their dependents are built, using continuous-actions/dynamic-monorepo."*
 
 ## FAQ
 
@@ -272,7 +272,7 @@ A prompt to try: *"Set up GitHub Actions for this monorepo so that only changed 
 - **Pin it:** releases are immutable. For the strictest setup, pin a full commit SHA and let Dependabot update it:
 
   ```yaml
-  - uses: Continuous-Actions/dynamic-monorepo@<commit-sha> # v1.0.0
+  - uses: continuous-actions/dynamic-monorepo@<commit-sha> # v1.0.0
   ```
 
 Report vulnerabilities privately: [SECURITY.md](SECURITY.md).
@@ -313,4 +313,4 @@ A single bundled JavaScript file with nothing to install. Planning 1,000 project
 
 ## License
 
-[MIT](LICENSE) © Continuous-Actions
+[MIT](LICENSE) © continuous-actions
