@@ -13,6 +13,8 @@
 
 `dynamic-monorepo` reads the git diff, finds the projects in your repository on its own (from `package.json`, `go.mod`, `Dockerfile` and similar files), follows the dependencies between them, and gives you JSON lists for a GitHub Actions matrix. Change a shared library and everything that uses it is rebuilt. Change a Dockerfile and that image is rebuilt. The job summary says why each project was picked.
 
+**In use:** [rajadilipkolli/spring-boot-microservices-series-v2](https://github.com/rajadilipkolli/spring-boot-microservices-series-v2/pull/1775) builds its services with it, and [uni-helper/create-uni](https://github.com/uni-helper/create-uni/pull/194) runs the path-filter audit. Gaps the audit found have been fixed in [rhesis](https://github.com/rhesis-ai/rhesis/pull/2903), [GitWand](https://github.com/devlint/GitWand/pull/210) and [nagiyu-platform](https://github.com/nagiyu/nagiyu-platform/issues/3966).
+
 **See it live:** the [demo monorepo](https://github.com/continuous-actions/dynamic-monorepo-demo) (Node, Go and Docker, no config) has pull requests showing what runs for a shared-library change, a Dockerfile change and a docs-only change.
 
 <!-- toc -->
